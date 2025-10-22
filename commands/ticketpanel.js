@@ -22,7 +22,7 @@ module.exports = {
     }
     client.__panelCooldown.set(message.channel.id, Date.now());
 
-    const color = 0x5865f2;
+     const color = 0x06072C;
 
     const e1 = new EmbedBuilder()
       .setTitle('Welcome to MagicUI Support')

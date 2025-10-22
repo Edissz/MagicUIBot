@@ -1,45 +1,30 @@
-function formatStamp(d) {
-  const dt = new Date(d);
-  return isNaN(dt) ? '' : dt.toISOString();
-}
-
-async function buildTranscript(channel) {
-  const lines = [];
-  lines.push(`Transcript for #${channel.name} (${channel.id})`);
-  lines.push(`Guild: ${channel.guild?.name} (${channel.guildId})`);
-  lines.push(`URL: https://discord.com/channels/${channel.guildId}/${channel.id}`);
-  lines.push('='.repeat(64));
-
-  let lastId = undefined;
-  let fetchMore = true;
-  let rounds = 0;
-
-  while (fetchMore && rounds < 10) {
-    const msgs = await channel.messages.fetch({ limit: 100, before: lastId }).catch(() => null);
-    if (!msgs || msgs.size === 0) break;
-
-    msgs.sort((a, b) => a.createdTimestamp - b.createdTimestamp).forEach(m => {
-      const time = formatStamp(m.createdTimestamp);
-      const author = `${m.author?.tag || m.author?.id || 'Unknown'} (${m.author?.id || ''})`;
-      const content = (m.content || '').replace(/\n/g, '\n  ');
-      lines.push(`[${time}] ${author}: ${content}`);
-
-      if (m.attachments?.size) {
-        m.attachments.forEach(att => {
-          lines.push(`  [attachment] ${att.name} -> ${att.url}`);
-        });
-      }
-      if (m.embeds?.length) {
-        lines.push(`  [embed] count=${m.embeds.length}`);
-      }
-    });
-
-    lastId = msgs.first().id;
-    fetchMore = msgs.size === 100;
-    rounds++;
+async function fetchAllMessages(channel) {
+  let lastId = null;
+  const messages = [];
+  for (;;) {
+    const fetched = await channel.messages.fetch({ limit: 100, before: lastId }).catch(() => null);
+    if (!fetched || fetched.size === 0) break;
+    fetched.forEach(m => messages.push(m));
+    lastId = fetched.last().id;
+    if (fetched.size < 100) break;
   }
-
-  return lines.join('\n');
+  return messages.reverse();
 }
 
-module.exports = { buildTranscript };
+function formatMsg(m) {
+  const ts = new Date(m.createdTimestamp).toISOString();
+  const author = `${m.author.tag} (${m.author.id})`;
+  const content = m.content || '';
+  const attach = m.attachments.size
+    ? ` [attachments: ${[...m.attachments.values()].map(a => a.url).join(', ')}]`
+    : '';
+  return `[${ts}] ${author}: ${content}${attach}`;
+}
+
+async function saveTranscript(channel) {
+  const msgs = await fetchAllMessages(channel);
+  const lines = msgs.map(formatMsg);
+  return `Transcript for #${channel.name} (${channel.id})\n` + lines.join('\n');
+}
+
+module.exports = { saveTranscript };

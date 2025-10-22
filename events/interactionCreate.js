@@ -27,6 +27,7 @@ module.exports = {
   async execute(interaction, client) {
     if (!client.__seenInteractions) client.__seenInteractions = new Set();
 
+    // Select reason
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_reason_select') {
       const reason = interaction.values[0];
       const modal = new ModalBuilder()
@@ -66,6 +67,7 @@ module.exports = {
       return interaction.showModal(modal);
     }
 
+    // Ticket creation
     if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket_modal_')) {
       await interaction.deferReply({ ephemeral: true });
 
@@ -77,13 +79,39 @@ module.exports = {
       const nameBase = sanitizeName(interaction.user.username);
       const channelName = `ticket-${nameBase}-${type}`;
       const parent = interaction.guild.channels.cache.get(CATEGORY_ID);
-      if (!parent) return interaction.editReply({ content: '⚠️ Category not found. Please contact an administrator.' });
+      if (!parent)
+        return interaction.editReply({
+          content: '⚠️ Category not found. Please contact an administrator.'
+        });
 
       const overwrites = [
         { id: interaction.guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-        { id: STAFF_ROLE_1, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageChannels] },
-        { id: STAFF_ROLE_2, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageChannels] }
+        {
+          id: interaction.user.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory
+          ]
+        },
+        {
+          id: STAFF_ROLE_1,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.ManageChannels
+          ]
+        },
+        {
+          id: STAFF_ROLE_2,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.ManageChannels
+          ]
+        }
       ];
 
       const ch = await interaction.guild.channels.create({
@@ -94,18 +122,21 @@ module.exports = {
         reason: `Ticket created by ${interaction.user.tag} (${interaction.user.id})`
       });
 
-      const color = 0x5865f2;
+      const color = 0x2b2d31; // more official blue tone
       const openEmbed = new EmbedBuilder()
         .setTitle('Magic UI Support Ticket')
         .setColor(color)
         .setDescription(
           `A new support ticket has been opened.\n\n` +
-          `**Submitted by:** ${interaction.user} \`(${interaction.user.id})\`\n` +
-          `**Ticket Type:** \`${type}\`\n\n` +
-          `**Issue Details:**\n${issue_details}\n\n` +
-          `**Steps Tried:**\n${steps_taken}\n\n` +
-          `**Additional Notes:**\n${extra_notes}\n\n` +
-          `A staff member will review your issue shortly. Please avoid tagging staff members unless necessary.`
+            `**Submitted by:** ${interaction.user} \`(${interaction.user.id})\`\n` +
+            `**Ticket Type:** \`${type}\`\n\n` +
+            `**Issue Details:**\n${issue_details}\n\n` +
+            `**Steps Tried:**\n${steps_taken}\n\n` +
+            `**Additional Notes:**\n${extra_notes}\n\n` +
+            `A staff member will review your issue shortly. Please avoid tagging staff members unless necessary.`
+        )
+        .setImage(
+          'https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif?ex=68fa1f29&is=68f8cda9&hm=06e75e6659eff21a4e1cd2f3d4073b241c9e5e661ea85fdda42b6f8592ce0164'
         )
         .setTimestamp();
 
@@ -128,11 +159,11 @@ module.exports = {
       });
 
       await thread.members.add(client.user.id).catch(() => null);
-      await thread.send('🧩 This is a private staff-only thread for internal discussion regarding this ticket.');
+      await thread.send('This is a private staff-only thread for internal discussion regarding this ticket.');
 
       try {
         await interaction.user.send({
-          content: `✅ Your ticket has been successfully created: ${ch.toString()}\nA staff member will assist you shortly.`
+          content: ` <:check:1430525546608988203> Your ticket has been successfully created: ${ch.toString()}\nA staff member will assist you shortly.`
         });
       } catch {}
 
@@ -143,27 +174,29 @@ module.exports = {
           .setColor(color)
           .setDescription(
             `**User:** ${interaction.user.tag} (${interaction.user.id})\n` +
-            `**Channel:** ${ch.toString()} (${ch.id})\n` +
-            `**Type:** ${type}\n` +
-            `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
+              `**Channel:** ${ch.toString()} (${ch.id})\n` +
+              `**Type:** ${type}\n` +
+              `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
           );
         await modlog.send({ embeds: [ml] });
       }
 
-      return interaction.editReply({ content: ' <:check:1430525546608988203> Your support ticket has been opened successfully.' });
+      return interaction.editReply({
+        content: ' <:check:1430525546608988203> Your support ticket has been opened successfully.'
+      });
     }
 
+    // Claim / hold / close
     if (interaction.isButton() && /^ticket_(claim|hold|close)$/.test(interaction.customId)) {
       await interaction.deferReply({ ephemeral: true });
-      const color = 0x5865f2;
+      const color = 0x2b2d31;
       const modlog = interaction.guild.channels.cache.get(MODLOG_ID);
       const channel = interaction.channel;
 
-      if (!channel || channel.type !== ChannelType.GuildText) {
+      if (!channel || channel.type !== ChannelType.GuildText)
         return interaction.editReply({ content: '⚠️ Invalid ticket channel.' });
-      }
 
-      // CLAIM BUTTON
+      // CLAIM
       if (interaction.customId === 'ticket_claim') {
         await channel.setName(`📥｜claimed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
         await channel.send({
@@ -171,12 +204,11 @@ module.exports = {
             new EmbedBuilder()
               .setTitle('📥 Ticket Claimed')
               .setColor(color)
-              .setDescription(`This ticket has been **claimed by ${interaction.user}**.\nThey will assist you shortly.`)
+              .setDescription(`This ticket has been **claimed by ${interaction.user}**.`)
               .setTimestamp()
           ]
         });
         await interaction.editReply({ content: ` <:check:1430525546608988203> Ticket claimed by ${interaction.user}.` });
-
         const e = new EmbedBuilder()
           .setTitle('📥 Ticket Claimed')
           .setColor(color)
@@ -185,7 +217,7 @@ module.exports = {
         return;
       }
 
-      // HOLD BUTTON
+      // HOLD
       if (interaction.customId === 'ticket_hold') {
         await channel.setName(`⏸️｜hold-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
         await channel.send({
@@ -193,12 +225,11 @@ module.exports = {
             new EmbedBuilder()
               .setTitle('⏸️ Ticket On Hold')
               .setColor(0xfaa61a)
-              .setDescription(`This ticket has been **put on hold by ${interaction.user}**.\nPlease wait for further updates.`)
+              .setDescription(`This ticket has been **put on hold by ${interaction.user}**.`)
               .setTimestamp()
           ]
         });
         await interaction.editReply({ content: '⏸️ Ticket marked as on hold.' });
-
         const e = new EmbedBuilder()
           .setTitle('⏸️ Ticket On Hold')
           .setColor(color)
@@ -207,7 +238,7 @@ module.exports = {
         return;
       }
 
-      // CLOSE BUTTON
+      // CLOSE (confirmation)
       if (interaction.customId === 'ticket_close') {
         const confirmRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId('ticket_close_confirm').setLabel(' <:check:1430525546608988203> Confirm Close').setStyle(ButtonStyle.Danger),
@@ -217,31 +248,40 @@ module.exports = {
       }
     }
 
+    // Confirm/Cancel close
     if (interaction.isButton() && /^ticket_close_(confirm|cancel)$/.test(interaction.customId)) {
       await interaction.deferUpdate();
       const channel = interaction.channel;
-      const color = 0x5865f2;
+      const color = 0x2b2d31;
       const modlog = interaction.guild.channels.cache.get(MODLOG_ID);
 
-      if (interaction.customId === 'ticket_close_cancel') {
+      if (interaction.customId === 'ticket_close_cancel')
         return interaction.editReply({ content: '❌ Ticket closure cancelled.', components: [] });
-      }
 
       if (!channel) return interaction.editReply({ content: '⚠️ Channel not found.', components: [] });
 
       await channel.setName(`✅｜closed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
+
+      // Lock channel instead of deleting
+      await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
+        SendMessages: false,
+        ViewChannel: true
+      });
+
       await channel.send({
         embeds: [
           new EmbedBuilder()
             .setTitle('✅ Ticket Closed')
             .setColor(color)
-            .setDescription(`This ticket has been **closed by ${interaction.user}**. A transcript will be saved shortly.`)
+            .setDescription(`This ticket has been **closed by ${interaction.user}**.\nA transcript has been saved.`)
             .setTimestamp()
         ]
       });
 
       const content = await saveTranscript(channel);
-      const file = new AttachmentBuilder(Buffer.from(content, 'utf-8'), { name: `transcript-${channel.id}.txt` });
+      const file = new AttachmentBuilder(Buffer.from(content, 'utf-8'), {
+        name: `transcript-${channel.id}.txt`
+      });
 
       const e = new EmbedBuilder()
         .setTitle(' <:check:1430525546608988203> Ticket Closed')
@@ -253,8 +293,10 @@ module.exports = {
 
       if (modlog) await modlog.send({ embeds: [e], files: [file] });
 
-      await interaction.editReply({ content: ' <:check:1430525546608988203> Ticket closed. Transcript has been archived.', components: [] });
-      setTimeout(() => channel.delete('Ticket closed'), 2000).catch(() => null);
+      await interaction.editReply({
+        content: ' <:check:1430525546608988203> Ticket closed and locked. Transcript archived.',
+        components: []
+      });
     }
   }
 };

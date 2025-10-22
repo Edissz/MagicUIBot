@@ -3,6 +3,9 @@ const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('
 module.exports = {
   name: 'guildMemberAdd',
   async execute(member) {
+    // Small delay to ensure the bot can DM right after join
+    await new Promise(res => setTimeout(res, 2000));
+
     try {
       const embed = new EmbedBuilder()
         .setTitle('Hey There!')
@@ -20,11 +23,11 @@ module.exports = {
 **<:techouse210:1421840914653122631> Need help?**
 Jump to our [Support Channel](https://discord.com/channels/1151315619246002176/1405208521871724605)
 
-*✨ Enjoy your stay!*
+✨ *Enjoy your stay!*
         `)
         .setColor('#FFFFFF')
         .setImage('https://magicui.design/og')
-        .setFooter({ text: 'Magic UI - Modern Next.js Templates' });
+        .setFooter({ text: 'Magic UI • Modern Next.js Templates' });
 
       const button = new ButtonBuilder()
         .setLabel('🌐 Visit MagicUI')
@@ -34,8 +37,9 @@ Jump to our [Support Channel](https://discord.com/channels/1151315619246002176/1
       const row = new ActionRowBuilder().addComponents(button);
 
       await member.send({ embeds: [embed], components: [row] });
+      console.log(`✅ Sent welcome DM to ${member.user.tag}`);
     } catch (err) {
-      console.error('❌ Failed to DM new member:', err);
+      console.error(`❌ Failed to DM ${member.user.tag}:`, err.message);
     }
   },
 };

@@ -122,7 +122,7 @@ module.exports = {
         reason: `Ticket created by ${interaction.user.tag} (${interaction.user.id})`
       });
 
-      const color = 0x2b2d31; // more official blue tone
+      const color = 0x2b2d31;
       const openEmbed = new EmbedBuilder()
         .setTitle('Magic UI Support Ticket')
         .setColor(color)
@@ -159,11 +159,11 @@ module.exports = {
       });
 
       await thread.members.add(client.user.id).catch(() => null);
-      await thread.send('This is a private staff-only thread for internal discussion regarding this ticket.');
+      await thread.send('🧩 This is a private staff-only thread for internal discussion regarding this ticket.');
 
       try {
         await interaction.user.send({
-          content: ` <:check:1430525546608988203> Your ticket has been successfully created: ${ch.toString()}\nA staff member will assist you shortly.`
+          content: `✅ Your ticket has been successfully created: ${ch.toString()}\nA staff member will assist you shortly.`
         });
       } catch {}
 
@@ -186,7 +186,7 @@ module.exports = {
       });
     }
 
-    // Claim / hold / close
+    // Claim / hold / close buttons
     if (interaction.isButton() && /^ticket_(claim|hold|close)$/.test(interaction.customId)) {
       await interaction.deferReply({ ephemeral: true });
       const color = 0x2b2d31;
@@ -241,10 +241,10 @@ module.exports = {
       // CLOSE (confirmation)
       if (interaction.customId === 'ticket_close') {
         const confirmRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('ticket_close_confirm').setLabel(' <:check:1430525546608988203> Confirm Close').setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId('ticket_close_cancel').setLabel('✖️ Cancel').setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId('ticket_close_confirm').setLabel('Confirm Close').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId('ticket_close_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary)
         );
-        return interaction.editReply({ content: '⚠️ Are you sure you want to close this ticket?', components: [confirmRow] });
+        return interaction.editReply({ content: 'Are you sure you want to close this ticket?', components: [confirmRow] });
       }
     }
 
@@ -262,26 +262,18 @@ module.exports = {
 
       await channel.setName(`✅｜closed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
 
-      // Lock channel instead of deleting
-      await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
-        SendMessages: false,
-        ViewChannel: true
-      });
-
       await channel.send({
         embeds: [
           new EmbedBuilder()
             .setTitle('✅ Ticket Closed')
             .setColor(color)
-            .setDescription(`This ticket has been **closed by ${interaction.user}**.\nA transcript has been saved.`)
+            .setDescription(`This ticket has been **closed by ${interaction.user}**.\nA transcript will be saved and the channel will be deleted in a few seconds.`)
             .setTimestamp()
         ]
       });
 
       const content = await saveTranscript(channel);
-      const file = new AttachmentBuilder(Buffer.from(content, 'utf-8'), {
-        name: `transcript-${channel.id}.txt`
-      });
+      const file = new AttachmentBuilder(Buffer.from(content, 'utf-8'), { name: `transcript-${channel.id}.txt` });
 
       const e = new EmbedBuilder()
         .setTitle(' <:check:1430525546608988203> Ticket Closed')
@@ -294,9 +286,17 @@ module.exports = {
       if (modlog) await modlog.send({ embeds: [e], files: [file] });
 
       await interaction.editReply({
-        content: ' <:check:1430525546608988203> Ticket closed and locked. Transcript archived.',
+        content: ' <:check:1430525546608988203> Ticket closed. Transcript archived. Channel will delete shortly.',
         components: []
       });
+
+      setTimeout(async () => {
+        try {
+          await channel.delete('Ticket closed and deleted automatically');
+        } catch (err) {
+          console.error('Failed to delete ticket channel:', err);
+        }
+      }, 7000);
     }
   }
 };

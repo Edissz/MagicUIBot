@@ -1,8 +1,13 @@
 module.exports = {
-  name: 'ready',
-  once: true,
-  execute(client) {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-    client.user.setActivity('MagicUI ✨', { type: 'PLAYING' });
+  name: 'messageCreate',
+  execute(message, client) {
+    if (!message.content.startsWith('!') || message.author.bot) return;
+
+    const args = message.content.slice(1).split(/ +/);
+    const commandName = args.shift().toLowerCase();
+    const command = client.commands.get(commandName);
+
+    if (command) command.execute(message, args, client);
   },
 };
+

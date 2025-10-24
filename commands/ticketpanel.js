@@ -22,7 +22,7 @@ module.exports = {
     }
     client.__panelCooldown.set(message.channel.id, Date.now());
 
-     const color = 0x06072C;
+    const color = 0x06072C;
 
     const e1 = new EmbedBuilder()
       .setTitle('Welcome to MagicUI Support')
@@ -63,25 +63,21 @@ module.exports = {
           .setDescription('Problems with billing, refunds, or failed transactions.')
           .setValue('billing')
           .setEmoji({ id: '1421842840899551332', name: 'techouse212' }),
-
         new StringSelectMenuOptionBuilder()
           .setLabel('Bug Report & Technical Support')
           .setDescription('Something isn’t working? Report technical issues or glitches.')
           .setValue('bug')
           .setEmoji({ id: '1421844306511007784', name: 'techouse213' }),
-
         new StringSelectMenuOptionBuilder()
           .setLabel('General Support')
           .setDescription('Need help or have a question not listed above?')
           .setValue('general')
           .setEmoji({ id: '1421844303474462720', name: 'techouse214' }),
-
         new StringSelectMenuOptionBuilder()
           .setLabel('Rule Violation')
           .setDescription('Report a user or component breaking server rules or terms.')
           .setValue('rule')
           .setEmoji({ id: '1421844300043387050', name: 'techouse215' }),
-
         new StringSelectMenuOptionBuilder()
           .setLabel('Order / Product Issue')
           .setDescription('Issue with a purchase, delivery, or product received.')
@@ -93,5 +89,16 @@ module.exports = {
 
     await message.channel.send({ embeds: [e1, e2, e3], components: [row] });
     return message.reply('<:check:1430525546608988203> Ticket panel posted.');
+  },
+  interactionHandler(client) {
+    client.on('interactionCreate', async (interaction) => {
+      if (!interaction.isStringSelectMenu()) return;
+      if (interaction.customId !== 'ticket_reason_select') return;
+      const value = interaction.values[0];
+      await interaction.reply({
+        content: `✅ You selected **${value}**. Please describe your issue below to continue.`,
+        ephemeral: true,
+      });
+    });
   }
 };

@@ -58,7 +58,9 @@ for (const f of eventFiles) {
 
 const app = express();
 app.get('/', (_, res) => res.send('✅ MagicUIBot KeepAlive running'));
-app.listen(3000, () => console.log('✅ KeepAlive running on port 3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ KeepAlive running on port ${PORT}`));
+
 
 client.once('ready', () => {
   console.log(`✅ Bot is online and ready!`);

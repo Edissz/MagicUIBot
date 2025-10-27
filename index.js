@@ -4,7 +4,10 @@ const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js'
 const fs = require('fs');
 const path = require('path');
 
-if (global.__MagicUIBotLoaded) process.exit(0);
+if (global.__MagicUIBotLoaded) {
+  console.log('⚠️ Bot instance already loaded — exiting duplicate.');
+  process.exit(0);
+}
 global.__MagicUIBotLoaded = true;
 
 const client = new Client({
@@ -27,6 +30,7 @@ if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath, { recursive: true }
 const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
 
 for (const f of commandFiles) {
+  delete require.cache[require.resolve(path.join(commandsPath, f))];
   try {
     const cmd = require(path.join(commandsPath, f));
     if (!cmd?.name) continue;
@@ -42,14 +46,13 @@ if (!fs.existsSync(eventsPath)) fs.mkdirSync(eventsPath, { recursive: true });
 const eventFiles = fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'));
 
 for (const f of eventFiles) {
+  delete require.cache[require.resolve(path.join(eventsPath, f))];
   try {
     const ev = require(path.join(eventsPath, f));
     if (!ev?.name || typeof ev.execute !== 'function') continue;
-
-    client.removeAllListeners(ev.name); // prevent duplicates
+    client.removeAllListeners(ev.name);
     if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
     else client.on(ev.name, (...args) => ev.execute(...args, client));
-
     console.log(`✅ Loaded event: ${ev.name}`);
   } catch (err) {
     console.error(`❌ Failed to load event ${f}:`, err);
@@ -61,14 +64,11 @@ app.get('/', (_, res) => res.send('✅ MagicUIBot KeepAlive running'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ KeepAlive running on port ${PORT}`));
 
-
 client.once('ready', () => {
   console.log(`✅ Bot is online and ready!`);
   console.log(`✅ Logged in as ${client.user.tag}`);
-
   let lastPing = client.ws.ping;
   console.log(`Initial ping: ${lastPing}ms`);
-
   setInterval(() => {
     const ping = client.ws.ping;
     if (ping !== lastPing) {
@@ -78,4 +78,6 @@ client.once('ready', () => {
   }, 5000);
 });
 
-client.login(process.env.TOKEN);
+if (!client.isReady()) {
+  client.login(process.env.TOKEN).catch(console.error);
+}

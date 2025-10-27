@@ -26,8 +26,10 @@ module.exports = {
   name: 'interactionCreate',
   async execute(interaction, client) {
     if (!client.__seenInteractions) client.__seenInteractions = new Set();
+    if (client.__seenInteractions.has(interaction.id)) return;
+    client.__seenInteractions.add(interaction.id);
+    setTimeout(() => client.__seenInteractions.delete(interaction.id), 60000);
 
-    // Select reason
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_reason_select') {
       const reason = interaction.values[0];
       const modal = new ModalBuilder()
@@ -67,7 +69,6 @@ module.exports = {
       return interaction.showModal(modal);
     }
 
-    // Ticket creation
     if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket_modal_')) {
       await interaction.deferReply({ ephemeral: true });
 
@@ -186,7 +187,6 @@ module.exports = {
       });
     }
 
-    // Claim / hold / close buttons
     if (interaction.isButton() && /^ticket_(claim|hold|close)$/.test(interaction.customId)) {
       await interaction.deferReply({ ephemeral: true });
       const color = 0x2b2d31;
@@ -196,7 +196,6 @@ module.exports = {
       if (!channel || channel.type !== ChannelType.GuildText)
         return interaction.editReply({ content: '⚠️ Invalid ticket channel.' });
 
-      // CLAIM
       if (interaction.customId === 'ticket_claim') {
         await channel.setName(`📥｜claimed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
         await channel.send({
@@ -217,7 +216,6 @@ module.exports = {
         return;
       }
 
-      // HOLD
       if (interaction.customId === 'ticket_hold') {
         await channel.setName(`⏸️｜hold-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
         await channel.send({
@@ -238,7 +236,6 @@ module.exports = {
         return;
       }
 
-      // CLOSE (confirmation)
       if (interaction.customId === 'ticket_close') {
         const confirmRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId('ticket_close_confirm').setLabel('Confirm Close').setStyle(ButtonStyle.Danger),
@@ -248,7 +245,6 @@ module.exports = {
       }
     }
 
-    // Confirm/Cancel close
     if (interaction.isButton() && /^ticket_close_(confirm|cancel)$/.test(interaction.customId)) {
       await interaction.deferUpdate();
       const channel = interaction.channel;

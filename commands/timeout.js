@@ -13,7 +13,7 @@ module.exports = {
     const caseNum = addCase(message.guild.id, target.id, { type: 'timeout', mod: message.author.id, reason, minutes });
     const embed = new EmbedBuilder()
       .setTitle('Punishment Notice')
-      .setDescription(`**<:64363463446:1421844300043387050> Magic UI - You received a punishment from our moderation team.**\n\n> **Punishment**: Timeout (${minutes}m)\n> **Case ID**: #${caseNum}\n> **Reason**: ${reason}\n\nAppeal:\nhttps://discord.com/channels/1151315619246002176/1405208521871724605\nMagic UI Moderation Team.`)
+      .setDescription(`**Magic UI - You received a punishment from our moderation team.**\n\n> **Punishment**: Timeout (${minutes}m)\n> **Case ID**: #${caseNum}\n> **Reason**: ${reason}\n\nAppeal:\nhttps://discord.com/channels/1151315619246002176/1405208521871724605\nMagic UI Moderation Team.`)
       .setColor('Red');
     const btn = new ButtonBuilder().setLabel('Appeal Here').setURL('https://discord.com/channels/1151315619246002176/1405208521871724605').setStyle(ButtonStyle.Link);
     const row = new ActionRowBuilder().addComponents(btn);

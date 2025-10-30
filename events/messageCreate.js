@@ -26,8 +26,7 @@ module.exports = {
 
     try {
       await command.execute(message, args, client);
-    } catch (e) {
-      console.error(e);
+    } catch {
       try { await message.reply('❌ Error running command.'); } catch {}
     } finally {
       setTimeout(() => {

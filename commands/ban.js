@@ -15,12 +15,10 @@ module.exports = {
       .setColor('Red')
       .setDescription(
         `**Magic UI - You received a punishment from our moderation team.**\n\n` +
-        `*Please review the server rules and the details below:*\n\n` +
         `> **Punishment:** Ban\n` +
         `> **Case ID:** #${caseNum}\n` +
         `> **Reason:** ${reason}\n\n` +
-        `If you believe this was a mistake, open an appeal:\n` +
-        `https://discord.com/channels/1151315619246002176/1405208521871724605\n\n` +
+        `Appeal:\nhttps://discord.com/channels/1151315619246002176/1405208521871724605\n` +
         `Magic UI Moderation Team.`
       );
     const row = new ActionRowBuilder().addComponents(

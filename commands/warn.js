@@ -4,9 +4,8 @@ const { addCase, getUser } = require('../utils/caseStore');
 module.exports = {
   name: 'warn',
   async execute(message, args, client) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers))
       return message.reply('❌ You don’t have permission to use this command.');
-    }
     const target = message.mentions.members.first();
     if (!target) return message.reply('❌ Please mention a valid user.');
     const why = args.slice(1).join(' ') || 'No reason provided.';
@@ -17,12 +16,10 @@ module.exports = {
       .setColor('Red')
       .setDescription(
         `**Magic UI - You received a punishment from our moderation team.**\n\n` +
-        `*Please review the server rules and the details below:*\n\n` +
         `> **Punishment:** Warn\n` +
         `> **Case ID:** #${caseNum}\n` +
         `> **Reason:** ${why}\n\n` +
-        `If you believe this was a mistake, open an appeal:\n` +
-        `https://discord.com/channels/1151315619246002176/1405208521871724605\n\n` +
+        `Appeal:\nhttps://discord.com/channels/1151315619246002176/1405208521871724605\n` +
         `Magic UI Moderation Team.`
       );
     const row = new ActionRowBuilder().addComponents(

@@ -37,28 +37,19 @@ client.modlogChannelId = '1355260778965373000';
 
 const commandsPath = path.join(__dirname, 'commands');
 if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath, { recursive: true });
-const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
-
-for (const f of commandFiles) {
+for (const f of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
   const p = path.join(commandsPath, f);
   delete require.cache[require.resolve(p)];
   try {
     const cmd = require(p);
-    if (!cmd?.name) continue;
-    client.commands.set(cmd.name, cmd);
-    console.log(`✅ Loaded command: ${cmd.name}`);
-  } catch (err) {
-    console.error(`❌ Failed to load command ${f}:`, err);
-  }
+    if (cmd?.name) client.commands.set(cmd.name, cmd);
+  } catch {}
 }
 
 const eventsPath = path.join(__dirname, 'events');
 if (!fs.existsSync(eventsPath)) fs.mkdirSync(eventsPath, { recursive: true });
-const eventFiles = fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'));
-
 if (!global.__boundEvents) global.__boundEvents = new Set();
-
-for (const f of eventFiles) {
+for (const f of fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
   const p = path.join(eventsPath, f);
   delete require.cache[require.resolve(p)];
   try {
@@ -68,31 +59,20 @@ for (const f of eventFiles) {
     global.__boundEvents.add(ev.name);
     if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
     else client.on(ev.name, (...args) => ev.execute(...args, client));
-    console.log(`✅ Loaded event: ${ev.name}`);
-  } catch (err) {
-    console.error(`❌ Failed to load event ${f}:`, err);
-  }
+  } catch {}
 }
 
 const app = express();
 app.get('/', (_, res) => res.send('✅ MagicUIBot KeepAlive running'));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ KeepAlive running on port ${PORT} (pid ${process.pid})`));
+app.listen(PORT, () => {});
 
 client.once('ready', () => {
-  console.log(`✅ Bot is online and ready! pid=${process.pid}`);
-  console.log(`✅ Logged in as ${client.user.tag}`);
   let lastPing = client.ws.ping;
-  console.log(`Initial ping: ${lastPing}ms`);
   setInterval(() => {
     const ping = client.ws.ping;
-    if (ping !== lastPing) {
-      console.log(`Bot ping: ${ping}ms`);
-      lastPing = ping;
-    }
+    if (ping !== lastPing) lastPing = ping;
   }, 5000);
 });
 
-if (!client.isReady()) {
-  client.login(process.env.TOKEN).catch(console.error);
-}
+if (!client.isReady()) client.login(process.env.TOKEN).catch(() => {});

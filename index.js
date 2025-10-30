@@ -64,13 +64,10 @@ for (const f of eventFiles) {
   try {
     const ev = require(p);
     if (!ev?.name || typeof ev.execute !== 'function') continue;
-
     if (global.__boundEvents.has(ev.name)) client.removeAllListeners(ev.name);
     global.__boundEvents.add(ev.name);
-
     if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
     else client.on(ev.name, (...args) => ev.execute(...args, client));
-
     console.log(`✅ Loaded event: ${ev.name}`);
   } catch (err) {
     console.error(`❌ Failed to load event ${f}:`, err);

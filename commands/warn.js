@@ -7,21 +7,11 @@ module.exports = {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
       return message.reply('❌ You don’t have permission to use this command.');
     }
-
     const target = message.mentions.members.first();
     if (!target) return message.reply('❌ Please mention a valid user.');
     const why = args.slice(1).join(' ') || 'No reason provided.';
-
-    const caseNum = addCase(message.guild.id, target.id, {
-      type: 'warn',
-      mod: message.author.id,
-      reason: why
-    });
-
-    // reply to mod confirmation
+    const caseNum = addCase(message.guild.id, target.id, { type: 'warn', mod: message.author.id, reason: why });
     await message.reply(`✅ Warned **${target.user.tag}** | Case #${caseNum}`);
-
-    // DM the user
     const dmEmbed = new EmbedBuilder()
       .setTitle('Punishment Notice')
       .setColor('Red')
@@ -35,18 +25,12 @@ module.exports = {
         `https://discord.com/channels/1151315619246002176/1405208521871724605\n\n` +
         `Magic UI Moderation Team.`
       );
-
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('Appeal Here')
-        .setURL('https://discord.com/channels/1151315619246002176/1405208521871724605')
-        .setStyle(ButtonStyle.Link)
+      new ButtonBuilder().setLabel('Appeal Here').setURL('https://discord.com/channels/1151315619246002176/1405208521871724605').setStyle(ButtonStyle.Link)
     );
-
     try { await target.send({ embeds: [dmEmbed], components: [row] }); } catch {}
-
-    // Log to modlogs
-    const log = client.channels.cache.get(client.modlogChannelId);
+    let log = client.channels.cache.get(client.modlogChannelId);
+    if (!log) { try { log = await client.channels.fetch(client.modlogChannelId); } catch {} }
     if (log) {
       const logEmbed = new EmbedBuilder()
         .setTitle('Moderation Log')
@@ -63,10 +47,8 @@ module.exports = {
         .setFooter({ text: 'Magic UI Moderation System' });
       await log.send({ embeds: [logEmbed] });
     }
-
-    // Auto-timeout after 3 warns
     const info = getUser(message.guild.id, target.id);
-    const warnCount = info.cases.filter(c => c.type === 'warn').length;
+    const warnCount = (info.cases || []).filter(c => c.type === 'warn').length;
     if (warnCount >= 3) {
       const hours = 6;
       await target.timeout(hours * 60 * 60 * 1000, 'Auto-timeout: 3 warns').catch(() => null);
@@ -81,7 +63,8 @@ module.exports = {
           `Magic UI Moderation Team.`
         );
       try { await target.send({ embeds: [autoEmbed], components: [row] }); } catch {}
-      await log.send({ embeds: [autoEmbed] });
+      if (!log) { try { log = await client.channels.fetch(client.modlogChannelId); } catch {} }
+      if (log) await log.send({ embeds: [autoEmbed] });
     }
   },
 };

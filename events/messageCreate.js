@@ -10,7 +10,6 @@ module.exports = {
     if (!message.content.startsWith(prefix)) return;
 
     if (!client.__processedMessages) client.__processedMessages = new Set();
-
     if (message.__handled) return;
     message.__handled = true;
 
@@ -29,6 +28,7 @@ module.exports = {
       await command.execute(message, args, client);
     } catch (e) {
       console.error(e);
+      try { await message.reply('❌ Error running command.'); } catch {}
     } finally {
       setTimeout(() => {
         processedLocal.delete(message.id);

@@ -18,8 +18,9 @@ module.exports = {
     const btn = new ButtonBuilder().setLabel('Appeal Here').setURL('https://discord.com/channels/1151315619246002176/1405208521871724605').setStyle(ButtonStyle.Link);
     const row = new ActionRowBuilder().addComponents(btn);
     try { await target.send({ embeds: [embed], components: [row] }); } catch {}
-    const log = client.channels.cache.get(client.modlogChannelId);
-    if (log) log.send({ embeds: [embed] });
+    let log = client.channels.cache.get(client.modlogChannelId);
+    if (!log) { try { log = await client.channels.fetch(client.modlogChannelId); } catch {} }
+    if (log) await log.send({ embeds: [embed] });
     await message.reply(`✅ Timed out ${target.user.tag} for ${minutes}m | Case #${caseNum}`);
   }
 };

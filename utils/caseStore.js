@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const dataPath = path.join(__dirname, '../data/cases.json');
+const dataDir = path.join(__dirname, '../data');
+const dataPath = path.join(dataDir, 'cases.json');
 
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(dataPath)) fs.writeFileSync(dataPath, JSON.stringify({}));
 
 function load() {
@@ -22,14 +24,8 @@ function addCase(guildId, userId, info) {
   const db = load();
   if (!db[guildId]) db[guildId] = {};
   if (!db[guildId][userId]) db[guildId][userId] = { cases: [] };
-
   const caseId = db[guildId][userId].cases.length + 1;
-  db[guildId][userId].cases.push({
-    id: caseId,
-    ...info,
-    date: new Date().toISOString(),
-  });
-
+  db[guildId][userId].cases.push({ id: caseId, ...info, date: new Date().toISOString() });
   save(db);
   return caseId;
 }

@@ -67,7 +67,7 @@ app.get('/', (_, res) => res.send('✅ MagicUIBot KeepAlive running'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {});
 
-client.once('ready', () => {
+client.once('clientReady', () => {
   let lastPing = client.ws.ping;
   setInterval(() => {
     const ping = client.ws.ping;

@@ -5,19 +5,21 @@ module.exports = {
   async execute(message, client) {
     if (!message.guild) return;
     if (message.author.bot) return;
+    if (!message.content) return;
 
     const prefix = client.prefix || '!';
     if (!message.content.startsWith(prefix)) return;
 
-    if (!client.__processedMessages) client.__processedMessages = new Set();
-    if (message.__handled) return;
-    message.__handled = true;
+    if (!client.__commandMessages) client.__commandMessages = new Set();
+
+    if (message.__commandHandled) return;
+    message.__commandHandled = true;
 
     if (processedLocal.has(message.id)) return;
     processedLocal.add(message.id);
 
-    if (client.__processedMessages.has(message.id)) return;
-    client.__processedMessages.add(message.id);
+    if (client.__commandMessages.has(message.id)) return;
+    client.__commandMessages.add(message.id);
 
     const args = message.content.slice(prefix.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
@@ -31,8 +33,8 @@ module.exports = {
     } finally {
       setTimeout(() => {
         processedLocal.delete(message.id);
-        client.__processedMessages?.delete(message.id);
-        if (message.__handled) delete message.__handled;
+        client.__commandMessages?.delete(message.id);
+        if (message.__commandHandled) delete message.__commandHandled;
       }, 30000);
     }
   },

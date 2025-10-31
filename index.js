@@ -10,8 +10,8 @@ try {
   fs.writeFileSync(fd, String(process.pid));
   fs.closeSync(fd);
   process.on('exit', () => { try { fs.unlinkSync(lockPath); } catch {} });
-  process.on('SIGINT', () => { try { fs.unlinkSync(lockPath); } catch {} ; process.exit(0) });
-  process.on('SIGTERM', () => { try { fs.unlinkSync(lockPath); } catch {} ; process.exit(0) });
+  process.on('SIGINT', () => { try { fs.unlinkSync(lockPath); } catch {}; process.exit(0) });
+  process.on('SIGTERM', () => { try { fs.unlinkSync(lockPath); } catch {}; process.exit(0) });
 } catch {
   console.log('⚠️ Another bot process is running. Exiting.');
   process.exit(0);
@@ -28,7 +28,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages
   ],
-  partials: [Partials.Channel]
+  partials: [Partials.Channel, Partials.Message]
 });
 
 client.commands = new Collection();
@@ -43,6 +43,7 @@ for (const f of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
   try {
     const cmd = require(p);
     if (cmd?.name) client.commands.set(cmd.name, cmd);
+    console.log(`✅ Loaded command: ${cmd.name}`);
   } catch {}
 }
 
@@ -59,20 +60,18 @@ for (const f of fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
     global.__boundEvents.add(ev.name);
     if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
     else client.on(ev.name, (...args) => ev.execute(...args, client));
+    console.log(`✅ Loaded event: ${ev.name}`);
   } catch {}
 }
 
 const app = express();
 app.get('/', (_, res) => res.send('✅ MagicUIBot KeepAlive running'));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {});
+app.listen(PORT, () => { console.log(`✅ KeepAlive running on port ${PORT}`) });
 
-client.once('clientReady', () => {
-  let lastPing = client.ws.ping;
-  setInterval(() => {
-    const ping = client.ws.ping;
-    if (ping !== lastPing) lastPing = ping;
-  }, 5000);
+client.once('ready', () => {
+  console.log(`✅ Bot is online and ready! pid=${process.pid}`);
+  console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-if (!client.isReady()) client.login(process.env.TOKEN).catch(() => {});
+client.login(process.env.TOKEN);

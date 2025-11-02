@@ -1,28 +1,45 @@
-const { Events, EmbedBuilder } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 
 module.exports = {
-  name: Events.MessageCreate,
-  async execute(message) {
+  name: 'ready',
+  once: true,
+  async execute(client) {
     const channelId = '1433152794415595721';
-    if (message.channel.id !== channelId || message.author.bot) return;
 
-    const stickyText =
-      '**Stay in the loop with Dev News <:5_:1415414561967706122>**\n' +
-      '> Get notified for new tools, AI launches, and tech updates — just select <@&1433155194224382094> role option at → <id:customize>';
+    const buildEmbed = () =>
+      new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setDescription(
+          '**Stay in the loop with Dev News <:5_:1415414561967706122>**\n' +
+          '> Get notified for new tools, AI launches, and tech updates — just select <@&1433155194224382094> role option at → <id:customize>'
+        );
 
-    const embed = new EmbedBuilder()
-      .setColor(0x2b2d31)
-      .setDescription(stickyText);
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) return console.log('⚠️ Sticky channel not found.');
 
-    try {
-      if (message.client.stickyMessage && message.client.stickyMessage.deletable) {
-        await message.client.stickyMessage.delete().catch(() => {});
+    const sendSticky = async () => {
+      if (client.stickyMessageId) {
+        try {
+          const old = await channel.messages.fetch(client.stickyMessageId);
+          if (old?.deletable) await old.delete().catch(() => {});
+        } catch {}
       }
+      const msg = await channel.send({ embeds: [buildEmbed()] });
+      client.stickyMessageId = msg.id;
+    };
 
-      const newSticky = await message.channel.send({ embeds: [embed] });
-      message.client.stickyMessage = newSticky;
-    } catch (err) {
-      console.error('❌ Error handling sticky message:', err);
-    }
+    await sendSticky();
+    console.log(`✅ Sticky message active in #${channel.name}`);
+
+    client.on('messageCreate', async (message) => {
+      if (message.author.bot) return;
+      if (message.channel.id !== channelId) return;
+      try {
+        await sendSticky();
+      } catch (err) {
+        console.error('❌ Error refreshing sticky:', err);
+      }
+    });
   },
 };
+

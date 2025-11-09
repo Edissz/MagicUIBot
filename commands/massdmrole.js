@@ -2,13 +2,13 @@ const { EmbedBuilder } = require("discord.js");
 
 module.exports = {
   name: "massdmrole",
-  description: "DM everyone in a specific role about the MagicUI event.",
+  description: "Safely DM everyone in a specific role about the MagicUI event.",
   async execute(message, args) {
     if (!message.member.permissions.has("Administrator"))
-      return message.reply("❌ You don’t have permission to use this.");
+      return message.reply("❌ You don’t have permission to use this command.");
 
     const role = message.mentions.roles.first();
-    if (!role) return message.reply("❌ Mention a role to DM (e.g. `!massdmrole @Role`).");
+    if (!role) return message.reply("❌ Mention a role (e.g. `!massdmrole @Notify`).");
 
     const members = role.members;
     if (!members.size) return message.reply("⚠️ No members found with that role.");
@@ -23,18 +23,34 @@ module.exports = {
       .setFooter({ text: "MagicUI — Elevate your next project." })
       .setTimestamp();
 
-    let success = 0;
+    let sent = 0;
+    let failed = 0;
+    const total = members.size;
+    const delay = 2500; // 2.5 seconds between DMs to stay safe
+
+    const progressMsg = await message.reply(
+      `📤 Starting to DM **${total}** members with the ${role.name} role... (0%)`
+    );
+
     for (const [_, member] of members) {
       try {
         await member.send({ embeds: [embed] });
         await member.send(`🔗 Event Link: ${eventLink}`);
-        success++;
-        await new Promise(r => setTimeout(r, 1000)); // wait 1s per DM to avoid rate limits
-      } catch (err) {
-        console.log(`❌ Failed to DM ${member.user.tag}`);
+        sent++;
+      } catch {
+        failed++;
       }
+
+      const percent = Math.round(((sent + failed) / total) * 100);
+      await progressMsg.edit(
+        `📤 DM Progress: **${percent}%** — ✅ Sent: **${sent}**, ❌ Failed: **${failed}**, ⏳ Total: **${total}**`
+      );
+
+      await new Promise((r) => setTimeout(r, delay));
     }
 
-    message.reply(`✅ Successfully DMed **${success}** members with the ${role.name} role.`);
+    await progressMsg.edit(
+      `✅ Finished! Successfully DMed **${sent}/${total}** members (${failed} failed).`
+    );
   },
 };

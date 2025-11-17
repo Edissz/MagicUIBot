@@ -1,13 +1,15 @@
 const fs = require("fs");
+const { PermissionsBitField } = require("discord.js");
 
 let stats = { responses: 0, minutes: 0 };
 if (fs.existsSync("./responseStats.json")) {
-  stats = JSON.parse(fs.readFileSync("./responseStats.json", "utf8"));
+  try { stats = JSON.parse(fs.readFileSync("./responseStats.json", "utf8")); } catch {}
 }
 
 module.exports = {
   name: "messageCreate",
   async execute(message, client) {
+    if (!message || !message.member) return;
     if (message.author.bot) return;
     if (!message.channel.topic) return;
     if (!message.channel.topic.includes("OWNER:")) return;
@@ -16,7 +18,7 @@ module.exports = {
     const cid = message.channel.id;
 
     const isStaff =
-      message.member.permissions.has("Administrator") ||
+      message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
       message.member.roles.cache.some(r =>
         ["Moderator", "Administrator", "Manager"].includes(r.name)
       );
@@ -27,10 +29,17 @@ module.exports = {
     }
 
     if (client.__wait[cid]) {
-      const mins = Math.max(1, Math.round((Date.now() - client.__wait[cid]) / 60000));
+      const now = Date.now();
+      const diffMs = now - client.__wait[cid];
+      const mins = Math.max(1, Math.round(diffMs / 60000));
+
       stats.responses += 1;
       stats.minutes += mins;
-      fs.writeFileSync("./responseStats.json", JSON.stringify(stats));
+
+      try {
+        fs.writeFileSync("./responseStats.json", JSON.stringify(stats));
+      } catch {}
+
       delete client.__wait[cid];
     }
   }

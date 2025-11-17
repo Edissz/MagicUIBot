@@ -25,17 +25,17 @@ module.exports = {
 
     const color = 0xffffff;
 
+    const etaEmbed = new EmbedBuilder()
+      .setTitle('Estimated Response Time')
+      .setColor(color)
+      .setDescription(formatEtaText(client, message.guild));
+
     const e1 = new EmbedBuilder()
       .setTitle('Welcome to MagicUI Support')
       .setColor(color)
       .setDescription(
         '<:techouse211:1421840900258009129> Welcome to the **official Magic UI support**. We\'re here to assist with anything related to design, code, billing, access, or technical problems. Please follow the steps carefully and choose the correct reason to avoid delays.'
       );
-
-    const etaEmbed = new EmbedBuilder()
-      .setTitle('Estimated Response Time')
-      .setColor(color)
-      .setDescription(formatEtaText(client, message.guild));
 
     const e2 = new EmbedBuilder()
       .setTitle('Rules & When to Open a Ticket')
@@ -105,7 +105,7 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(menu);
 
     const panelMsg = await message.channel.send({
-      embeds: [e1, etaEmbed, e2, e3],
+      embeds: [etaEmbed, e1, e2, e3],
       components: [row]
     });
 

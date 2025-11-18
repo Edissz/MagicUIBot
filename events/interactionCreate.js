@@ -13,12 +13,19 @@ const {
   StringSelectMenuBuilder
 } = require('discord.js');
 const { saveTranscript } = require('../utils/transcript');
+const {
+  registerTicketOpen,
+  registerTicketClaim
+} = require('../utils/ticketStats');
 
 const CATEGORY_ID = '1405640921017745419';
 const MODLOG_ID = '1355260778965373000';
 const STAFF_ROLE_1 = '1405207645618700349';
 const STAFF_ROLE_2 = '1324536259439362089';
 const STAFF_ROLE_NAMES_FOR_BUTTONS = ['Moderator', 'Administrator', 'Manager'];
+
+const KOFI_URL =
+  'https://ko-fi.com/summary/984bdf5c-a724-4489-b324-9f44d2d85f1e';
 
 function sanitizeName(s) {
   return s.toLowerCase().replace(/[^a-z0-9\-]/g, '').slice(0, 20) || 'ticket';
@@ -137,12 +144,14 @@ async function finalizeTicketClose(interaction, channel, client) {
   try {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({
-        content: ' <:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
+        content:
+          ' <:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
         components: []
       });
     } else {
       await interaction.reply({
-        content: ' <:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
+        content:
+          ' <:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
         ephemeral: true
       });
     }
@@ -316,6 +325,7 @@ module.exports = {
 
       let ch;
       let voiceChannel = null;
+      const color = 0x2b2d31;
 
       if (type === 'voice') {
         const textName = `voice-ticket-${nameBase}`;
@@ -351,7 +361,8 @@ module.exports = {
         await ch.setTopic(`OWNER:${interaction.user.id} | TYPE:${type}`);
       }
 
-      const color = 0x2b2d31;
+      // Register ticket open for ETA (claim-based)
+      registerTicketOpen(client, ch);
 
       let description =
         `A new support ticket has been opened.\n\n` +
@@ -385,10 +396,22 @@ module.exports = {
         .setTimestamp();
 
       const staffRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('ticket_claim').setLabel('✅ Claim Ticket').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('ticket_hold').setLabel('⏸️ Put On Hold').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('ticket_transfer').setLabel('🔁 Transfer Ticket').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('ticket_close').setLabel('🗑️ Close Ticket').setStyle(ButtonStyle.Danger)
+        new ButtonBuilder()
+          .setCustomId('ticket_claim')
+          .setLabel('✅ Claim Ticket')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('ticket_hold')
+          .setLabel('⏸️ Put On Hold')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('ticket_transfer')
+          .setLabel('🔁 Transfer Ticket')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('ticket_close')
+          .setLabel('🗑️ Close Ticket')
+          .setStyle(ButtonStyle.Danger)
       );
 
       await ch.send({
@@ -404,7 +427,9 @@ module.exports = {
       });
 
       await thread.members.add(client.user.id).catch(() => null);
-      await thread.send('🧩 This is a private staff-only thread for internal discussion regarding this ticket.');
+      await thread.send(
+        '🧩 This is a private staff-only thread for internal discussion regarding this ticket.'
+      );
 
       try {
         await interaction.user.send({
@@ -430,7 +455,8 @@ module.exports = {
       }
 
       return interaction.editReply({
-        content: ' <:check:1430525546608988203> Your support ticket has been opened successfully.'
+        content:
+          ' <:check:1430525546608988203> Your support ticket has been opened successfully.'
       });
     }
 
@@ -461,11 +487,16 @@ module.exports = {
         new ButtonBuilder()
           .setCustomId('ticket_transcript_no')
           .setLabel('No, just close')
-          .setStyle(ButtonStyle.Secondary)
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setLabel('☕ Support on Ko-fi')
+          .setStyle(ButtonStyle.Link)
+          .setURL(KOFI_URL)
       );
 
       return interaction.reply({
-        content: 'Thank you for your feedback. Would you like to receive a transcript of this conversation?',
+        content:
+          'Thank you for your feedback. Would you like to receive a transcript of this conversation?',
         components: [row],
         ephemeral: true
       });
@@ -537,6 +568,9 @@ module.exports = {
               .setTimestamp()
           ]
         });
+
+        // Register claim for ETA
+        await registerTicketClaim(client, channel);
 
         await interaction.editReply({
           content: ` <:check:1430525546608988203> Ticket claimed by ${interaction.user}.`
@@ -657,7 +691,8 @@ module.exports = {
       });
 
       return interaction.editReply({
-        content: 'A rating request has been sent to the user. The ticket will be closed after feedback is submitted.',
+        content:
+          'A rating request has been sent to the user. The ticket will be closed after feedback is submitted.',
         components: []
       });
     }
@@ -714,11 +749,16 @@ module.exports = {
         new ButtonBuilder()
           .setCustomId('ticket_transcript_no')
           .setLabel('No, just close')
-          .setStyle(ButtonStyle.Secondary)
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setLabel('☕ Support on Ko-fi')
+          .setStyle(ButtonStyle.Link)
+          .setURL(KOFI_URL)
       );
 
       return interaction.reply({
-        content: 'Thank you for rating **5/5**. Would you like to receive a transcript of this conversation?',
+        content:
+          'Thank you for rating **5/5**. Would you like to receive a transcript of this conversation?',
         components: [row],
         ephemeral: true
       });

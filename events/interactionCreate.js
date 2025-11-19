@@ -489,7 +489,7 @@ module.exports = {
           .setLabel('No, just close')
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-          .setLabel('☕ Support on Ko-fi')
+          .setLabel('Buy your advisor a Ko-fi ☕')
           .setStyle(ButtonStyle.Link)
           .setURL(KOFI_URL)
       );

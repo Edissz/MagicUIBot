@@ -30,7 +30,7 @@ Jump to our [Support Channel](https://discord.com/channels/1151315619246002176/1
         .setFooter({ text: 'Magic UI • Modern Next.js Templates' });
 
       const button = new ButtonBuilder()
-        .setLabel('🌐 Visit MagicUI')
+        .setLabel('Visit Magic UI')
         .setURL('https://magicui.design/')
         .setStyle(ButtonStyle.Link);
 

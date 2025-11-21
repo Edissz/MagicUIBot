@@ -19,9 +19,10 @@ const {
 } = require('../utils/ticketStats');
 
 const CATEGORY_ID = '1405640921017745419';
-const MODLOG_ID = '1355260778965373000';
-const STAFF_ROLE_1 = '1405207645618700349';
-const STAFF_ROLE_2 = '1324536259439362089';
+const MODLOG_ID = '1441524770083573770';
+const ROLE_SUPPORT = '1405207645618700349';
+const ROLE_MANAGEMENT = '1441080027113586841';
+const ROLE_DEV = '1441079871911493693';
 const STAFF_ROLE_NAMES_FOR_BUTTONS = ['Moderator', 'Administrator', 'Manager'];
 
 const KOFI_URL =
@@ -36,8 +37,9 @@ function isStaffMember(member) {
   if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
   return member.roles.cache.some(
     (r) =>
-      r.id === STAFF_ROLE_1 ||
-      r.id === STAFF_ROLE_2 ||
+      r.id === ROLE_SUPPORT ||
+      r.id === ROLE_MANAGEMENT ||
+      r.id === ROLE_DEV ||
       STAFF_ROLE_NAMES_FOR_BUTTONS.includes(r.name)
   );
 }
@@ -45,6 +47,12 @@ function isStaffMember(member) {
 function getTicketOwnerId(channel) {
   if (!channel || !channel.topic) return null;
   const m = channel.topic.match(/OWNER:(\d{17,20})/);
+  return m ? m[1] : null;
+}
+
+function getTicketClaimedById(channel) {
+  if (!channel || !channel.topic) return null;
+  const m = channel.topic.match(/CLAIMED_BY:(\d{17,20})/);
   return m ? m[1] : null;
 }
 
@@ -237,15 +245,15 @@ module.exports = {
       let targetRoleId = null;
       let label = '';
 
-      if (value === 'mod') {
-        targetRoleId = STAFF_ROLE_1;
-        label = 'Moderator Team';
-      } else if (value === 'admin') {
-        targetRoleId = STAFF_ROLE_2;
-        label = 'Admin Team';
-      } else if (value === 'manager') {
-        targetRoleId = STAFF_ROLE_2;
-        label = 'Manager Team';
+      if (value === 'support') {
+        targetRoleId = ROLE_SUPPORT;
+        label = 'Customer Support Team';
+      } else if (value === 'management') {
+        targetRoleId = ROLE_MANAGEMENT;
+        label = 'Management Team';
+      } else if (value === 'dev') {
+        targetRoleId = ROLE_DEV;
+        label = 'Development Team';
       }
 
       await interaction.update({
@@ -304,7 +312,7 @@ module.exports = {
           ]
         },
         {
-          id: STAFF_ROLE_1,
+          id: ROLE_SUPPORT,
           allow: [
             PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.SendMessages,
@@ -313,7 +321,16 @@ module.exports = {
           ]
         },
         {
-          id: STAFF_ROLE_2,
+          id: ROLE_MANAGEMENT,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.ManageChannels
+          ]
+        },
+        {
+          id: ROLE_DEV,
           allow: [
             PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.SendMessages,
@@ -415,7 +432,7 @@ module.exports = {
       );
 
       await ch.send({
-        content: `${interaction.user} <@&${STAFF_ROLE_1}> <@&${STAFF_ROLE_2}>`,
+        content: `${interaction.user} <@&${ROLE_SUPPORT}> <@&${ROLE_MANAGEMENT}> <@&${ROLE_DEV}>`,
         embeds: [openEmbed],
         components: [staffRow]
       });
@@ -432,12 +449,20 @@ module.exports = {
       );
 
       try {
-        await interaction.user.send({
-          content:
-            type === 'voice' && voiceChannel
-              ? `✅ Your voice support ticket has been created: ${ch.toString()}\nJoin ${voiceChannel.toString()} when you are ready.`
-              : `✅ Your ticket has been successfully created: ${ch.toString()}\nA staff member will assist you shortly.`
-        });
+        if (type === 'voice' && voiceChannel) {
+          await interaction.user.send({
+            content:
+              `Hello there, 👋 Your **voice support** ticket has been successfully created: ${ch.toString()}\n` +
+              `Join ${voiceChannel.toString()} when you are ready.\n` +
+              `**A staff member will assist you soon.**`
+          });
+        } else {
+          await interaction.user.send({
+            content:
+              `Hello there, 👋 Your ticket has been successfully created: ${ch.toString()}\n` +
+              `**A staff member will assist you soon.**`
+          });
+        }
       } catch {}
 
       const modlog = interaction.guild.channels.cache.get(MODLOG_ID);
@@ -528,9 +553,9 @@ module.exports = {
           .setCustomId('ticket_transfer_select')
           .setPlaceholder('Select a team to transfer to')
           .addOptions(
-            { label: 'Moderator Team', value: 'mod', description: 'Transfer to Moderators' },
-            { label: 'Admin Team', value: 'admin', description: 'Transfer to Admins' },
-            { label: 'Manager Team', value: 'manager', description: 'Transfer to Managers' }
+            { label: 'Customer Support Team', value: 'support', description: 'Transfer to Customer Support' },
+            { label: 'Management Team', value: 'management', description: 'Transfer to Management' },
+            { label: 'Development Team', value: 'dev', description: 'Transfer to Development' }
           );
 
         const row = new ActionRowBuilder().addComponents(menu);
@@ -553,9 +578,35 @@ module.exports = {
           });
         }
 
+        const alreadyClaimedId = getTicketClaimedById(channel);
+        if (alreadyClaimedId) {
+          let claimedTag = `<@${alreadyClaimedId}>`;
+          try {
+            const claimedUser = await client.users.fetch(alreadyClaimedId);
+            if (claimedUser) claimedTag = claimedUser.tag;
+          } catch {}
+          return interaction.editReply({
+            content: `⚠️ This ticket has already been claimed by **${claimedTag}**.`
+          });
+        }
+
         await channel
           .setName(`📥｜claimed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`)
           .catch(() => null);
+
+        const existingTopic = channel.topic || '';
+        let newTopic;
+        if (/CLAIMED_BY:\d{17,20}/.test(existingTopic)) {
+          newTopic = existingTopic.replace(
+            /CLAIMED_BY:\d{17,20}/,
+            `CLAIMED_BY:${interaction.user.id}`
+          );
+        } else if (existingTopic.length > 0) {
+          newTopic = `${existingTopic} | CLAIMED_BY:${interaction.user.id}`;
+        } else {
+          newTopic = `CLAIMED_BY:${interaction.user.id}`;
+        }
+        await channel.setTopic(newTopic).catch(() => null);
 
         await channel.send({
           embeds: [
@@ -612,7 +663,7 @@ module.exports = {
           .setDescription(
             `**Channel:** ${channel}\n**By:** ${interaction.user.tag}\n**At:** <t:${Math.floor(
               Date.now() / 1000
-            )}:F>`
+            )}:F>`  
           );
 
         if (modlog) await modlog.send({ embeds: [e] });

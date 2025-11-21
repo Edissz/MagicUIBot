@@ -14,9 +14,9 @@ module.exports = {
 
     const dmEmbed = new EmbedBuilder()
       .setColor(0x5865F2)
-      .setTitle("🔔 Role Update Notification")
+      .setTitle("Role Update Notification")
       .setDescription(
-        `Your roles have been updated in **Magic UI**.\n\n` +
+        `Hello there, Your roles have been updated in **Magic UI**.\n\n` +
         `**Added Roles:**\n${added}\n\n` +
         `**Removed Roles:**\n${removed}\n\n` +
         `If you believe this change was made by mistake, please contact a staff member.`

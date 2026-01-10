@@ -1,13 +1,10 @@
+const { sendVerifyPanel } = require("../utils/verifyPanel")
+
 module.exports = {
-  name: 'messageCreate',
-  execute(message, client) {
-    if (!message.content.startsWith('!') || message.author.bot) return;
-
-    const args = message.content.slice(1).split(/ +/);
-    const commandName = args.shift().toLowerCase();
-    const command = client.commands.get(commandName);
-
-    if (command) command.execute(message, args, client);
-  },
-};
-
+  name: "ready",
+  once: true,
+  async execute(client) {
+    console.log(`✅ Logged in as ${client.user.tag}`)
+    await sendVerifyPanel(client)
+  }
+}

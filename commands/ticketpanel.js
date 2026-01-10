@@ -1,131 +1,166 @@
 const {
+  ChannelType,
   PermissionsBitField,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   ActionRowBuilder,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
-  EmbedBuilder
-} = require('discord.js');
-const { formatEtaText } = require('../utils/ticketStats');
+  EmbedBuilder,
+} = require("discord.js");
 
-const PANEL_COOLDOWN_MS = 30000;
+const TICKET_CATEGORY_ID = "1405640921017745419";
+const SUPPORT_ROLE_IDS = ["1405207645618700349", "1441080027113586841", "1441079871911493693"];
+
+const BRAND = {
+  color: 0xffffff,
+  authorName: "MagicUI Support",
+  authorIcon:
+    "https://cdn.discordapp.com/icons/000000000000000000/000000000000000000.png?size=128",
+  footerText: "MagicUI support",
+};
+
+function v2Embed({ title, description }) {
+  return new EmbedBuilder()
+    .setColor(BRAND.color)
+    .setAuthor({ name: BRAND.authorName, iconURL: BRAND.authorIcon })
+    .setTitle(title)
+    .setDescription(description)
+    .setFooter({ text: BRAND.footerText })
+    .setTimestamp();
+}
+
+function reasonLabel(v) {
+  if (v === "billing") return "Payment Issue";
+  if (v === "bug") return "Bug Report & Technical Support";
+  if (v === "general") return "General Support";
+  if (v === "rule") return "Rule Violation";
+  if (v === "order") return "Order / Product Issue";
+  if (v === "voice") return "Live Voice Meeting With Support";
+  return v;
+}
 
 module.exports = {
-  name: 'ticketpanel',
-  async execute(message, args, client) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-      return message.reply('<:cross:1430525603701850165> You lack permission.');
+  name: "interactionCreate",
+  async execute(interaction, client) {
+    if (interaction.isStringSelectMenu()) {
+      if (interaction.customId !== "ticket_reason_select") return;
+
+      const reason = interaction.values[0];
+      const guild = interaction.guild;
+      if (!guild) return;
+
+      const existing = guild.channels.cache.find(
+        (c) =>
+          c.type === ChannelType.GuildText &&
+          c.parentId === TICKET_CATEGORY_ID &&
+          typeof c.topic === "string" &&
+          c.topic.includes(`ticket:${interaction.user.id}`)
+      );
+
+      if (existing) {
+        return interaction.reply({
+          content: `⚠️ You already have an open ticket: <#${existing.id}>`,
+          ephemeral: true,
+        });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId(`ticket_issue_modal:${reason}`)
+        .setTitle(`Ticket — ${reasonLabel(reason)}`);
+
+      const summary = new TextInputBuilder()
+        .setCustomId("ticket_summary")
+        .setLabel("Short summary")
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(80)
+        .setRequired(true)
+        .setPlaceholder("e.g. Payment failed / Component bug / Access issue...");
+
+      const details = new TextInputBuilder()
+        .setCustomId("ticket_details")
+        .setLabel("Details (include links, errors, screenshots info)")
+        .setStyle(TextInputStyle.Paragraph)
+        .setMaxLength(900)
+        .setRequired(true)
+        .setPlaceholder("Explain what happened, steps to reproduce, order IDs, etc.");
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(summary),
+        new ActionRowBuilder().addComponents(details)
+      );
+
+      return interaction.showModal(modal);
     }
 
-    if (!client.__panelCooldown) client.__panelCooldown = new Map();
-    const last = client.__panelCooldown.get(message.channel.id) || 0;
-    if (Date.now() - last < PANEL_COOLDOWN_MS) {
-      return message.reply('<:cross:1430525603701850165> Please wait before sending another panel.');
-    }
-    client.__panelCooldown.set(message.channel.id, Date.now());
+    if (interaction.isModalSubmit()) {
+      if (!interaction.customId.startsWith("ticket_issue_modal:")) return;
 
-    const color = 0xffffff;
+      const reason = interaction.customId.split(":")[1] || "general";
+      const summary = interaction.fields.getTextInputValue("ticket_summary");
+      const details = interaction.fields.getTextInputValue("ticket_details");
 
-    const e1 = new EmbedBuilder()
-      .setTitle('Welcome to MagicUI Support')
-      .setColor(color)
-      .setDescription(
-        '<:techouse211:1421840900258009129> Welcome to the **official Magic UI support**. We\'re here to assist with anything related to design, code, billing, access, or technical problems. Please follow the steps carefully and choose the correct reason to avoid delays.'
-      );
+      const guild = interaction.guild;
+      if (!guild) return;
 
-    const e2 = new EmbedBuilder()
-      .setTitle('Rules & When to Open a Ticket')
-      .setColor(color)
-      .setDescription(
-        '**Please Read Before Opening a Ticket**\n\n' +
-        'Misuse of the ticket system may result in warnings.\n\n' +
-        '**<:techouse210:1421840914653122631> Tickets may be opened for:**\n' +
-        '* <:techouse212:1421842840899551332> Payment or billing issues\n' +
-        '* <:techouse213:1421844306511007784> Bug reports or broken components\n' +
-        '* <:techouse214:1421844303474462720> General support inquiries\n' +
-        '* <:techouse215:1421844300043387050> Rule violation reports\n' +
-        '* <:techouse216:1421844296537083994> Order or product issues\n\n' +
-        '**Do *not* open tickets for:**\n' +
-        '> • Spam or off-topic questions\n' +
-        '> • Repeated requests without new information\n' +
-        '> • Feature suggestions (use <#1237846965342175394> instead)\n\n' +
-        'You must follow our server rules in order to use this system!'
-      );
+      const base = (interaction.user.username || "user")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")
+        .slice(0, 10);
+      const suffix = interaction.user.id.slice(-4);
+      const channelName = `ticket-${base || "user"}-${suffix}`;
 
-    const etaEmbed = new EmbedBuilder()
-      .setTitle('Estimated Response Time')
-      .setColor(color)
-      .setDescription(formatEtaText(client, message.guild));
+      const overwrites = [
+        {
+          id: guild.id,
+          deny: [PermissionsBitField.Flags.ViewChannel],
+        },
+        {
+          id: interaction.user.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+            PermissionsBitField.Flags.EmbedLinks,
+            PermissionsBitField.Flags.AddReactions,
+          ],
+        },
+        ...SUPPORT_ROLE_IDS.map((rid) => ({
+          id: rid,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.ManageMessages,
+          ],
+        })),
+      ];
 
-    const e3 = new EmbedBuilder()
-      .setTitle('Open a Ticket')
-      .setColor(color)
-      .setDescription(
-        'To begin, please select the reason for your ticket from the menu below. Our MagicUI team will handle it based on your selection.'
-      )
-      .setImage(
-        'https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif?ex=68f97669&is=68f824e9&hm=c9993fd79b529977008e75d8ee143cec72d92882aa1208b51b436aa0fbe205fb'
-      );
-
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId('ticket_reason_select')
-      .setPlaceholder('Choose a reason')
-      .addOptions(
-        new StringSelectMenuOptionBuilder()
-          .setLabel('Payment Issue')
-          .setDescription('Problems with billing, refunds, or failed transactions.')
-          .setValue('billing')
-          .setEmoji({ id: '1421842840899551332', name: 'techouse212' }),
-        new StringSelectMenuOptionBuilder()
-          .setLabel('Bug Report & Technical Support')
-          .setDescription('Something isn’t working? Report technical issues or glitches.')
-          .setValue('bug')
-          .setEmoji({ id: '1421844306511007784', name: 'techouse213' }),
-        new StringSelectMenuOptionBuilder()
-          .setLabel('General Support')
-          .setDescription('Need help or have a question not listed above?')
-          .setValue('general')
-          .setEmoji({ id: '1421844303474462720', name: 'techouse214' }),
-        new StringSelectMenuOptionBuilder()
-          .setLabel('Rule Violation')
-          .setDescription('Report a user or component breaking server rules or terms.')
-          .setValue('rule')
-          .setEmoji({ id: '1421844300043387050', name: 'techouse215' }),
-        new StringSelectMenuOptionBuilder()
-          .setLabel('Order / Product Issue')
-          .setDescription('Issue with a purchase, delivery, or product received.')
-          .setValue('order')
-          .setEmoji({ id: '1421844296537083994', name: 'techouse216' }),
-        new StringSelectMenuOptionBuilder()
-          .setLabel('Live Voice Meeting With Support')
-          .setDescription('Private voice channel with support (camera/screen share allowed).')
-          .setValue('voice')
-          .setEmoji('🎧')
-      );
-
-    const row = new ActionRowBuilder().addComponents(menu);
-
-    const panelMsg = await message.channel.send({
-      embeds: [e1, e2, etaEmbed, e3],
-      components: [row]
-    });
-
-    if (!client.ticketPanelInfo) client.ticketPanelInfo = {};
-    client.ticketPanelInfo[message.guild.id] = {
-      channelId: panelMsg.channel.id,
-      messageId: panelMsg.id
-    };
-
-    return message.reply('<:check:1430525546608988203> Ticket panel posted.');
-  },
-  interactionHandler(client) {
-    client.on('interactionCreate', async (interaction) => {
-      if (!interaction.isStringSelectMenu()) return;
-      if (interaction.customId !== 'ticket_reason_select') return;
-      const value = interaction.values[0];
-      await interaction.reply({
-        content: `✅ You selected **${value}**. Please describe your issue below to continue.`,
-        ephemeral: true
+      const ch = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+        parent: TICKET_CATEGORY_ID,
+        topic: `ticket:${interaction.user.id} reason:${reason}`,
+        permissionOverwrites: overwrites,
       });
-    });
-  }
+
+      const ticketEmbed = v2Embed({
+        title: `Ticket Opened — ${reasonLabel(reason)}`,
+        description:
+          `**User:** <@${interaction.user.id}>\n` +
+          `**Summary:** ${summary}\n\n` +
+          `**Details:**\n${details}`,
+      });
+
+      await ch.send({
+        content: `<@${interaction.user.id}> Support will be with you soon.`,
+        embeds: [ticketEmbed],
+      });
+
+      return interaction.reply({
+        content: `✅ Ticket created: <#${ch.id}>`,
+        ephemeral: true,
+      });
+    }
+  },
 };

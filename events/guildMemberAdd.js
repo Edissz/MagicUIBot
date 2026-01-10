@@ -1,16 +1,14 @@
-const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require("discord.js")
-const { handleVerifyOnJoin } = require("../utils/verify")
+const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
 
 module.exports = {
-  name: "guildMemberAdd",
+  name: 'guildMemberAdd',
   async execute(member) {
-    await handleVerifyOnJoin(member)
-
-    await new Promise(res => setTimeout(res, 2000))
+    // Small delay to ensure the bot can DM right after join
+    await new Promise(res => setTimeout(res, 2000));
 
     try {
       const embed = new EmbedBuilder()
-        .setTitle("Hey There!")
+        .setTitle('Hey There!')
         .setDescription(`
 ## 👋 Welcome to <:166878038:1346947141570007060> **Magic UI!**
 **Start exploring with these key channels:**
@@ -27,21 +25,21 @@ Jump to our [Support Channel](https://discord.com/channels/1151315619246002176/1
 
 ✨ *Enjoy your stay!*
         `)
-        .setColor("#FFFFFF")
-        .setImage("https://magicui.design/og")
-        .setFooter({ text: "Magic UI • Modern Next.js Templates" })
+        .setColor('#FFFFFF')
+        .setImage('https://magicui.design/og')
+        .setFooter({ text: 'Magic UI • Modern Next.js Templates' });
 
       const button = new ButtonBuilder()
-        .setLabel("Visit Magic UI")
-        .setURL("https://magicui.design/")
-        .setStyle(ButtonStyle.Link)
+        .setLabel('Visit Magic UI')
+        .setURL('https://magicui.design/')
+        .setStyle(ButtonStyle.Link);
 
-      const row = new ActionRowBuilder().addComponents(button)
+      const row = new ActionRowBuilder().addComponents(button);
 
-      await member.send({ embeds: [embed], components: [row] })
-      console.log(`✅ Sent welcome DM to ${member.user.tag}`)
+      await member.send({ embeds: [embed], components: [row] });
+      console.log(`✅ Sent welcome DM to ${member.user.tag}`);
     } catch (err) {
-      console.error(`❌ Failed to DM ${member.user.tag}:`, err.message)
+      console.error(`❌ Failed to DM ${member.user.tag}:`, err.message);
     }
-  }
-}
+  },
+};

@@ -1,3 +1,4 @@
+// utils/ticketStats.js
 const { EmbedBuilder } = require('discord.js');
 
 const CATEGORY_ID = '1405640921017745419';
@@ -8,8 +9,8 @@ function getContainer(client, guildId) {
   if (!client.__ticketStats[guildId]) {
     client.__ticketStats[guildId] = {
       stats: { totalResponses: 0, totalMinutes: 0 },
-      trackers: {},          // legacy (no longer used, kept so nothing breaks)
-      openTickets: {}        // channelId -> openedAt timestamp
+      trackers: {},
+      openTickets: {}
     };
   }
   return client.__ticketStats[guildId];
@@ -74,10 +75,9 @@ async function updateEtaPanel(client, guild) {
   if (!msg || !msg.embeds || msg.embeds.length === 0) return;
 
   const embeds = msg.embeds.map((e) => EmbedBuilder.from(e));
-  if (embeds.length < 3) return; // we know e1, e2, etaEmbed, e3 => eta is index 2
+  if (embeds.length < 3) return;
 
   const etaDescription = formatEtaText(client, guild);
-  // In your panel: [e1, e2, etaEmbed, e3] → eta is index 2
   embeds[2].setDescription(etaDescription);
 
   try {
@@ -85,10 +85,6 @@ async function updateEtaPanel(client, guild) {
   } catch {}
 }
 
-/**
- * Register that a ticket was just opened (text channel).
- * Called when the ticket text channel is created.
- */
 function registerTicketOpen(client, channel) {
   if (!channel || channel.parentId !== CATEGORY_ID) return;
   const guildId = channel.guild.id;
@@ -96,10 +92,6 @@ function registerTicketOpen(client, channel) {
   container.openTickets[channel.id] = Date.now();
 }
 
-/**
- * Register that a ticket has been claimed.
- * This is what feeds our ETA stats now.
- */
 async function registerTicketClaim(client, channel) {
   if (!channel || !channel.guild) return;
   const guild = channel.guild;
@@ -127,10 +119,6 @@ async function registerTicketClaim(client, channel) {
   } catch {}
 }
 
-/**
- * Legacy: message-based tracking (no longer used).
- * Kept as a no-op so any old imports won’t break.
- */
 async function handleTicketMessage(message, client) {
   return;
 }

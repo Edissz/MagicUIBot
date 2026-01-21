@@ -1,3 +1,4 @@
+// index.js
 require('dotenv').config();
 const express = require('express');
 const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');

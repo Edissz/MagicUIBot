@@ -3,14 +3,36 @@ const { PermissionsBitField } = require("discord.js");
 
 let stats = { responses: 0, minutes: 0 };
 if (fs.existsSync("./responseStats.json")) {
-  try { stats = JSON.parse(fs.readFileSync("./responseStats.json", "utf8")); } catch {}
+  try {
+    stats = JSON.parse(fs.readFileSync("./responseStats.json", "utf8"));
+  } catch {}
 }
 
 module.exports = {
   name: "messageCreate",
   async execute(message, client) {
-    if (!message || !message.member) return;
+    if (!message.guild) return;
     if (message.author.bot) return;
+
+    const prefix = client.prefix;
+    if (message.content.startsWith(prefix)) {
+      const args = message.content.slice(prefix.length).trim().split(/\s+/);
+      const cmdName = args.shift()?.toLowerCase();
+      if (!cmdName) return;
+
+      const command = client.commands.get(cmdName);
+      if (!command) return;
+
+      try {
+        await command.execute(message, args, client);
+      } catch (err) {
+        console.error(err);
+        await message.reply("⚠️ Command error.");
+      }
+      return;
+    }
+
+    if (!message.member) return;
     if (!message.channel.topic) return;
     if (!message.channel.topic.includes("OWNER:")) return;
 

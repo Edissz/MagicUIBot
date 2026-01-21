@@ -1,25 +1,8 @@
-// index.js
-require('dotenv').config();
-const express = require('express');
-const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
-
-const lockPath = path.join(__dirname, '.magicui.lock');
-try {
-  const fd = fs.openSync(lockPath, 'wx');
-  fs.writeFileSync(fd, String(process.pid));
-  fs.closeSync(fd);
-  process.on('exit', () => { try { fs.unlinkSync(lockPath); } catch {} });
-  process.on('SIGINT', () => { try { fs.unlinkSync(lockPath); } catch {}; process.exit(0) });
-  process.on('SIGTERM', () => { try { fs.unlinkSync(lockPath); } catch {}; process.exit(0) });
-} catch {
-  console.log('⚠️ Another bot process is running. Exiting.');
-  process.exit(0);
-}
-
-if (global.__MagicUIBotLoaded) process.exit(0);
-global.__MagicUIBotLoaded = true;
+require("dotenv").config();
+const express = require("express");
+const { Client, Collection, GatewayIntentBits, Partials } = require("discord.js");
+const fs = require("fs");
+const path = require("path");
 
 const client = new Client({
   intents: [
@@ -33,46 +16,30 @@ const client = new Client({
 });
 
 client.commands = new Collection();
-client.prefix = '!';
-client.modlogChannelId = '1355260778965373000';
+client.prefix = "!";
+client.modlogChannelId = "1355260778965373000";
 
-const commandsPath = path.join(__dirname, 'commands');
-if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath, { recursive: true });
-for (const f of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
-  const p = path.join(commandsPath, f);
-  delete require.cache[require.resolve(p)];
-  try {
-    const cmd = require(p);
-    if (cmd?.name) client.commands.set(cmd.name, cmd);
-    console.log(`✅ Loaded command: ${cmd.name}`);
-  } catch {}
+const commandsPath = path.join(__dirname, "commands");
+for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"))) {
+  const cmd = require(path.join(commandsPath, file));
+  if (cmd?.name) client.commands.set(cmd.name, cmd);
 }
 
-const eventsPath = path.join(__dirname, 'events');
-if (!fs.existsSync(eventsPath)) fs.mkdirSync(eventsPath, { recursive: true });
-if (!global.__boundEvents) global.__boundEvents = new Set();
-for (const f of fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
-  const p = path.join(eventsPath, f);
-  delete require.cache[require.resolve(p)];
-  try {
-    const ev = require(p);
-    if (!ev?.name || typeof ev.execute !== 'function') continue;
-    if (global.__boundEvents.has(ev.name)) client.removeAllListeners(ev.name);
-    global.__boundEvents.add(ev.name);
-    if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
-    else client.on(ev.name, (...args) => ev.execute(...args, client));
-    console.log(`✅ Loaded event: ${ev.name}`);
-  } catch {}
+const eventsPath = path.join(__dirname, "events");
+for (const file of fs.readdirSync(eventsPath).filter(f => f.endsWith(".js"))) {
+  const ev = require(path.join(eventsPath, file));
+  if (!ev?.name || typeof ev.execute !== "function") continue;
+  client.removeAllListeners(ev.name);
+  client.on(ev.name, (...args) => ev.execute(...args, client));
 }
 
 const app = express();
-app.get('/', (_, res) => res.send('✅ MagicUIBot KeepAlive running'));
+app.get("/", (_, res) => res.send("MagicUIBot OK"));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => { console.log(`✅ KeepAlive running on port ${PORT}`) });
+app.listen(PORT);
 
-client.once('ready', () => {
-  console.log(`✅ Bot is online and ready! pid=${process.pid}`);
-  console.log(`✅ Logged in as ${client.user.tag}`);
+client.once("ready", () => {
+  console.log(`READY ${client.user.tag}`);
 });
 
 client.login(process.env.TOKEN);

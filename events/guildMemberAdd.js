@@ -11,13 +11,13 @@ module.exports = {
         .setTitle('Hey There!')
         .setDescription(`
 ## 👋 Welcome to <:166878038:1346947141570007060> **Magic UI!**
-**Start exploring with these key channels:**
 
- [Rules & Faqs](https://discord.com/channels/1151315619246002176/1151318734158446623)
- [FAQs](https://discord.com/channels/1151315619246002176/1383896107012063333)
- [New Components & Releases](https://discord.com/channels/1151315619246002176/1151315620013551751)
- [Showcase](https://discord.com/channels/1151315619246002176/1362409572165226596)
- [Talk with others](https://discord.com/channels/1151315619246002176/1151315620013551755)
+**Start exploring with these key channels:**
+ - [Rules & Faqs](https://discord.com/channels/1151315619246002176/1151318734158446623)
+ - [FAQs](https://discord.com/channels/1151315619246002176/1383896107012063333)
+ - [New Components & Releases](https://discord.com/channels/1151315619246002176/1151315620013551751)
+ - [Showcase](https://discord.com/channels/1151315619246002176/1362409572165226596)
+ - [Talk with others](https://discord.com/channels/1151315619246002176/1151315620013551755)
 
 **<:messagenotification01StrokeRound:1463199182541033543> Need help?**
 Jump to our [Support Channel](https://discord.com/channels/1151315619246002176/1405208521871724605)

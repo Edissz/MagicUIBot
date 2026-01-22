@@ -14,7 +14,7 @@ module.exports = {
       .setTitle('Punishment Notice')
       .setColor('Red')
       .setDescription(
-        `**Magic UI - You received a punishment from our moderation team.**\n\n` +
+        `**<:t6:1463910065370169488> You received a punishment from our moderation team.**\n\n` +
         `> **Punishment:** Ban\n` +
         `> **Case ID:** #${caseNum}\n` +
         `> **Reason:** ${reason}\n\n` +

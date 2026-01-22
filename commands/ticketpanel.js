@@ -9,6 +9,9 @@ const {
 const PANEL_COOLDOWN_MS = 30000
 const WHITE = 0xffffff
 
+const PANEL_IMAGE =
+  "https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif"
+
 module.exports = {
   name: "ticketpanel",
   async execute(message, args, client) {
@@ -31,15 +34,20 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(WHITE)
       .setAuthor({ name: "MagicUI Support", iconURL: icon })
-      .setTitle("Contact Support")
+      .setTitle("Contact MagicUI Support")
       .setDescription(
-        "Press **Contact Support** to open the form.\n\n" +
-        "Please include:\n" +
-        "• What issue you’re experiencing\n" +
-        "• What you tried already\n" +
-        "• Whether you’re on **Free** or **Pro**\n" +
-        "• Optional email (only if you want contact outside Discord)"
+        "**Need help with MagicUI?**\n\n" +
+          "Use this support form for:\n" +
+          "• Technical issues (install/build/config/deploy)\n" +
+          "• Account access / permissions\n" +
+          "• Billing & plan issues\n\n" +
+          "**Before submitting:**\n" +
+          "• Add clear steps + screenshots/logs\n" +
+          "• Pick your plan (Free/Pro)\n" +
+          "• Keep it focused (1 issue per request)\n\n" +
+          "Press **Contact Support** to open the form. Our team will respond as soon as possible."
       )
+      .setImage(PANEL_IMAGE)
       .setFooter({ text: "MagicUI Support" })
       .setTimestamp()
 

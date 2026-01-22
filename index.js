@@ -29,7 +29,6 @@ const eventsPath = path.join(__dirname, "events")
 for (const file of fs.readdirSync(eventsPath).filter((f) => f.endsWith(".js"))) {
   const ev = require(path.join(eventsPath, file))
   if (!ev?.name || typeof ev.execute !== "function") continue
-
   const handler = (...args) => ev.execute(...args, client)
   if (ev.once) client.once(ev.name, handler)
   else client.on(ev.name, handler)

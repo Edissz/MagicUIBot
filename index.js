@@ -1,8 +1,8 @@
-require("dotenv").config()
-const express = require("express")
-const { Client, Collection, GatewayIntentBits, Partials } = require("discord.js")
-const fs = require("fs")
-const path = require("path")
+require("dotenv").config();
+const express = require("express");
+const { Client, Collection, GatewayIntentBits, Partials } = require("discord.js");
+const fs = require("fs");
+const path = require("path");
 
 const client = new Client({
   intents: [
@@ -13,39 +13,33 @@ const client = new Client({
     GatewayIntentBits.DirectMessages
   ],
   partials: [Partials.Channel, Partials.Message]
-})
+});
 
-client.commands = new Collection()
-client.prefix = "!"
+client.commands = new Collection();
+client.prefix = "!";
+client.modlogChannelId = "1355260778965373000";
 
-const commandsPath = path.join(__dirname, "commands")
-for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))) {
-  const cmd = require(path.join(commandsPath, file))
-  if (!cmd?.name) continue
-  client.commands.set(cmd.name, cmd)
-  if (Array.isArray(cmd.aliases)) {
-    for (const a of cmd.aliases) {
-      if (typeof a === "string" && a.trim().length) client.commands.set(a.trim().toLowerCase(), cmd)
-    }
-  }
+const commandsPath = path.join(__dirname, "commands");
+for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"))) {
+  const cmd = require(path.join(commandsPath, file));
+  if (cmd?.name) client.commands.set(cmd.name, cmd);
 }
 
-const eventsPath = path.join(__dirname, "events")
-for (const file of fs.readdirSync(eventsPath).filter((f) => f.endsWith(".js"))) {
-  const ev = require(path.join(eventsPath, file))
-  if (!ev?.name || typeof ev.execute !== "function") continue
-  const handler = (...args) => ev.execute(...args, client)
-  if (ev.once) client.once(ev.name, handler)
-  else client.on(ev.name, handler)
+const eventsPath = path.join(__dirname, "events");
+for (const file of fs.readdirSync(eventsPath).filter(f => f.endsWith(".js"))) {
+  const ev = require(path.join(eventsPath, file));
+  if (!ev?.name || typeof ev.execute !== "function") continue;
+  client.removeAllListeners(ev.name);
+  client.on(ev.name, (...args) => ev.execute(...args, client));
 }
 
-const app = express()
-app.get("/", (_, res) => res.send("MagicUIBot OK"))
-const PORT = process.env.PORT || 3000
-app.listen(PORT)
+const app = express();
+app.get("/", (_, res) => res.send("MagicUIBot OK"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT);
 
 client.once("ready", () => {
-  console.log(`READY ${client.user.tag}`)
-})
+  console.log(`READY ${client.user.tag}`);
+});
 
-client.login(process.env.TOKEN)
+client.login(process.env.TOKEN);

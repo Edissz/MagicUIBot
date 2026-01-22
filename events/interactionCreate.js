@@ -1,5 +1,6 @@
-const fs = require("fs")
+// events/interactionCreate.js
 const {
+  ChannelType,
   PermissionsBitField,
   EmbedBuilder,
   ActionRowBuilder,
@@ -8,588 +9,1442 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  ThreadAutoArchiveDuration,
+  AttachmentBuilder,
   StringSelectMenuBuilder
-} = require("discord.js")
+} = require('discord.js');
+const { saveTranscript } = require('../utils/transcript');
+const {
+  registerTicketOpen,
+  registerTicketClaim
+} = require('../utils/ticketStats');
 
-const LOG_CHANNEL_ID = "1463916239528267839"
+const CATEGORY_ID = '1405640921017745419';
+const MODLOG_ID = '1441524770083573770';
+const SUPPORT_QUEUE_ID = '1463541344973885481';
+const SUPPORT_RESOLVED_ID = '1441524770083573770';
 
-const WHITE = 0xffffff
-const BRAND = 0x2b79ee
-const GREEN = 0x57f287
-const DARK = 0x2b2d31
+const ROLE_SUPPORT = '1405207645618700349';
+const ROLE_MANAGEMENT = '1441080027113586841';
+const ROLE_DEV = '1441079871911493693';
+const STAFF_ROLE_NAMES_FOR_BUTTONS = ['Moderator', 'Administrator', 'Manager'];
 
-const STORE_FILE = "./supportRequests.json"
-const STAFF_ROLE_NAMES = ["Moderator", "Administrator", "Manager"]
+const KOFI_URL =
+  'https://ko-fi.com/summary/984bdf5c-a724-4489-b324-9f44d2d85f1e';
 
-function nowTs() {
-  return Math.floor(Date.now() / 1000)
+function sanitizeName(s) {
+  return s.toLowerCase().replace(/[^a-z0-9\-]/g, '').slice(0, 20) || 'ticket';
 }
 
-function safeRead() {
+function isStaffMember(member) {
+  if (!member) return false;
+  if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
+  return member.roles.cache.some(
+    (r) =>
+      r.id === ROLE_SUPPORT ||
+      r.id === ROLE_MANAGEMENT ||
+      r.id === ROLE_DEV ||
+      STAFF_ROLE_NAMES_FOR_BUTTONS.includes(r.name)
+  );
+}
+
+function getTicketOwnerId(channel) {
+  if (!channel || !channel.topic) return null;
+  const m = channel.topic.match(/OWNER:(\d{17,20})/);
+  return m ? m[1] : null;
+}
+
+function getTicketClaimedById(channel) {
+  if (!channel || !channel.topic) return null;
+  const m = channel.topic.match(/CLAIMED_BY:(\d{17,20})/);
+  return m ? m[1] : null;
+}
+
+function getFeedbackContainer(client, guildId, channelId) {
+  if (!client.__ticketFeedback) client.__ticketFeedback = {};
+  if (!client.__ticketFeedback[guildId]) client.__ticketFeedback[guildId] = {};
+  if (!client.__ticketFeedback[guildId][channelId]) {
+    client.__ticketFeedback[guildId][channelId] = {
+      rating: null,
+      feedback: null,
+      wantsTranscript: false,
+      closingUserId: null,
+      closingUserTag: null
+    };
+  }
+  return client.__ticketFeedback[guildId][channelId];
+}
+
+function ensureSupportStore(client, guildId) {
+  if (!client.__supportRequests) client.__supportRequests = {};
+  if (!client.__supportRequests[guildId]) client.__supportRequests[guildId] = {};
+  return client.__supportRequests[guildId];
+}
+
+function extractSupportUserIdFromMessage(msg) {
+  const e = msg?.embeds?.[0];
+  const footer = e?.footer?.text || '';
+  const m1 = footer.match(/REQ_USER:(\d{17,20})/);
+  if (m1) return m1[1];
+  const content = msg?.content || '';
+  const m2 = content.match(/REQ_USER:(\d{17,20})/);
+  if (m2) return m2[1];
+  return null;
+}
+
+function getSupportField(msg, name) {
+  const e = msg?.embeds?.[0];
+  if (!e || !e.fields) return null;
+  const f = e.fields.find((x) => (x?.name || '').toLowerCase() === name.toLowerCase());
+  return f ? (f.value || null) : null;
+}
+
+async function fetchChannel(guild, id) {
+  const cached = guild.channels.cache.get(id);
+  if (cached) return cached;
   try {
-    if (!fs.existsSync(STORE_FILE)) return {}
-    const raw = fs.readFileSync(STORE_FILE, "utf8")
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === "object" ? parsed : {}
+    const ch = await guild.channels.fetch(id);
+    return ch || null;
   } catch {
-    return {}
+    return null;
   }
 }
 
-function safeWrite(obj) {
-  try {
-    fs.writeFileSync(STORE_FILE, JSON.stringify(obj, null, 2))
-    return true
-  } catch {
-    return false
-  }
-}
-
-function ensureStore(client, guildId) {
-  if (!client.__supportStore) client.__supportStore = safeRead()
-  if (!client.__supportStore[guildId]) client.__supportStore[guildId] = {}
-  return client.__supportStore[guildId]
-}
-
-function persist(client) {
-  if (!client.__supportStore) return
-  safeWrite(client.__supportStore)
-}
-
-function ensureDrafts(client) {
-  if (!client.__supportDrafts) client.__supportDrafts = new Map()
-  return client.__supportDrafts
-}
-
-function isStaff(member) {
-  if (!member) return false
-  if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return true
-  if (member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return true
-  return member.roles.cache.some((r) => STAFF_ROLE_NAMES.includes(r.name))
-}
-
-function planLabel(v) {
-  if (v === "pro") return "Pro"
-  if (v === "free") return "Free"
-  return v || "N/A"
-}
-
-function teamLabel(v) {
-  if (v === "support") return "Customer Support"
-  if (v === "dev") return "Development"
-  if (v === "management") return "Management"
-  return "Unassigned"
-}
-
-async function getLogChannel(guild) {
-  const cached = guild.channels.cache.get(LOG_CHANNEL_ID)
-  if (cached) return cached
-  return await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null)
-}
-
-function supportsV2Modal() {
-  const djs = require("discord.js")
-  const hasLabel = typeof djs.LabelBuilder === "function"
-  const hasTextDisplay = typeof djs.TextDisplayBuilder === "function"
-  const hasFileUpload = typeof djs.FileUploadBuilder === "function"
-  const modal = new ModalBuilder()
-  const hasMethods =
-    typeof modal.addLabelComponents === "function" &&
-    typeof modal.addTextDisplayComponents === "function"
-  return hasLabel && hasTextDisplay && hasFileUpload && hasMethods
-}
-
-function buildPanelConfirmEmbed(guild, requestId, plan) {
-  const icon = guild?.iconURL?.({ dynamic: true, size: 128 }) || undefined
-  return new EmbedBuilder()
-    .setColor(BRAND)
-    .setAuthor({ name: "MagicUI Support", iconURL: icon })
-    .setTitle("Request received")
-    .setDescription(
-      "Your request has been submitted successfully.\n\n" +
-        "Our team will respond as soon as possible.\n\n" +
-        `**Plan:** ${planLabel(plan)}\n` +
-        `**Request ID:** \`${requestId}\``
-    )
-    .setTimestamp()
-}
-
-function buildUserReplyEmbed(guild, staffUser, body) {
-  const icon = guild?.iconURL?.({ dynamic: true, size: 128 }) || undefined
-  return new EmbedBuilder()
-    .setColor(BRAND)
-    .setAuthor({ name: "MagicUI Support", iconURL: icon })
-    .setTitle("Support reply")
-    .setDescription(`Hello,\n\n${body}\n\n— **${staffUser.tag}**`)
-    .setTimestamp()
-}
-
-function buildUserResolvedEmbed(guild) {
-  const icon = guild?.iconURL?.({ dynamic: true, size: 128 }) || undefined
-  return new EmbedBuilder()
-    .setColor(GREEN)
-    .setAuthor({ name: "MagicUI Support", iconURL: icon })
-    .setTitle("Resolved")
-    .setDescription(
-      "Your support request has been marked as **resolved**.\n\n" +
-        "If you still need help, submit a new request with updated details."
-    )
-    .setTimestamp()
-}
-
-function buildLogEmbed(guild, user, data) {
-  const icon = guild?.iconURL?.({ dynamic: true, size: 128 }) || null
-  const status = data.status || "open"
-  const uploadsText = Array.isArray(data.uploads) && data.uploads.length ? data.uploads.slice(0, 8).join("\n") : "N/A"
-
+function buildSupportRequestEmbed({ user, issue, tried, plan, email, teamLabel, statusLabel }) {
   const e = new EmbedBuilder()
-    .setColor(status === "resolved" ? GREEN : WHITE)
-    .setTitle(status === "resolved" ? "✅ Support Request — Resolved" : "🧾 Support Request")
-    .setThumbnail(icon)
+    .setTitle(statusLabel ? `Support Request · ${statusLabel}` : 'New Support Request')
+    .setColor(0x2b2d31)
     .setDescription(
       `**User:** ${user} \`(${user.id})\`\n` +
-        `**Plan:** **${planLabel(data.plan)}**\n` +
-        `**Status:** ${status === "resolved" ? "Resolved" : "Open"}\n` +
-        `**Created:** <t:${data.createdAt || nowTs()}:F>`
+      `**Created:** <t:${Math.floor(Date.now() / 1000)}:F>`
     )
     .addFields(
-      { name: "Issue", value: (data.issue || "N/A").slice(0, 1024) },
-      { name: "What they tried", value: (data.tried || "N/A").slice(0, 1024) },
-      { name: "Email", value: data.email && data.email.trim().length ? data.email.slice(0, 1024) : "N/A" },
-      { name: "Uploads", value: uploadsText.slice(0, 1024) },
-      { name: "Assigned Team", value: teamLabel(data.team) }
+      { name: 'Issue', value: issue || 'N/A' },
+      { name: 'What you tried', value: tried || 'N/A' },
+      { name: 'Plan', value: plan || 'N/A' },
+      { name: 'Email (optional)', value: email && email.trim().length ? email : 'N/A' }
     )
-    .setFooter({ text: `REQ_USER:${user.id} | STATUS:${status}` })
-    .setTimestamp()
+    .setFooter({ text: `REQ_USER:${user.id}` })
+    .setTimestamp();
 
-  if (data.lastActionByTag) {
-    e.addFields({ name: "Last Action By", value: `${data.lastActionByTag} (${data.lastActionById || "N/A"})` })
+  if (teamLabel) {
+    e.addFields({ name: 'Assigned Team', value: teamLabel });
   }
 
-  return e
+  return e;
 }
 
-function adminComponents(requestId, disabled) {
-  const teamMenu = new StringSelectMenuBuilder()
-    .setCustomId(`support_team:${requestId}`)
-    .setPlaceholder("Assign team…")
-    .setDisabled(!!disabled)
-    .addOptions(
-      { label: "Customer Support", value: "support", description: "General support + triage" },
-      { label: "Development", value: "dev", description: "Engineering / technical deep-dive" },
-      { label: "Management", value: "management", description: "Escalations / decisions" }
+function buildSupportResolvedEmbed({ user, issue, tried, plan, email, teamLabel, action, staffUser, staffMessage, attachmentUrl }) {
+  const e = new EmbedBuilder()
+    .setTitle(`Support Request · ${action}`)
+    .setColor(0x2b2d31)
+    .setDescription(
+      `**User:** ${user} \`(${user.id})\`\n` +
+      `**Handled by:** ${staffUser} \`(${staffUser.id})\`\n` +
+      `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
     )
-
-  const row1 = new ActionRowBuilder().addComponents(teamMenu)
-
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`support_reply:${requestId}`).setLabel("Reply").setStyle(ButtonStyle.Secondary).setDisabled(!!disabled),
-    new ButtonBuilder().setCustomId(`support_resolve:${requestId}`).setLabel("Resolve").setStyle(ButtonStyle.Success).setDisabled(!!disabled)
-  )
-
-  return [row1, row2]
-}
-
-function buildFallbackPlanPicker() {
-  const embed = new EmbedBuilder()
-    .setColor(DARK)
-    .setTitle("Select your plan")
-    .setDescription("Choose your plan first. Then the support form will open.")
-
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId("support_plan_select")
-    .setPlaceholder("Choose plan…")
-    .addOptions(
-      { label: "Free", value: "free", description: "Using the free version" },
-      { label: "Pro", value: "pro", description: "Using a paid plan" }
+    .addFields(
+      { name: 'Issue', value: issue || 'N/A' },
+      { name: 'What you tried', value: tried || 'N/A' },
+      { name: 'Plan', value: plan || 'N/A' },
+      { name: 'Email (optional)', value: email && email.trim().length ? email : 'N/A' }
     )
+    .setFooter({ text: `REQ_USER:${user.id}` })
+    .setTimestamp();
 
-  const row = new ActionRowBuilder().addComponents(menu)
-  return { embeds: [embed], components: [row], ephemeral: true }
-}
+  if (teamLabel) e.addFields({ name: 'Assigned Team', value: teamLabel });
 
-function buildFallbackModal() {
-  const modal = new ModalBuilder().setCustomId("support_contact_modal_fallback").setTitle("Contact MagicUI Support")
-
-  const issue = new TextInputBuilder()
-    .setCustomId("issue")
-    .setLabel("Issue")
-    .setStyle(TextInputStyle.Paragraph)
-    .setRequired(true)
-    .setMaxLength(1000)
-    .setPlaceholder("What’s happening? What do you need help with?")
-
-  const tried = new TextInputBuilder()
-    .setCustomId("tried")
-    .setLabel("What you tried")
-    .setStyle(TextInputStyle.Paragraph)
-    .setRequired(true)
-    .setMaxLength(1000)
-    .setPlaceholder("Commands you ran, configs, what happened…")
-
-  const email = new TextInputBuilder()
-    .setCustomId("email")
-    .setLabel("Email (optional)")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(false)
-    .setMaxLength(80)
-    .setPlaceholder("Optional email")
-
-  const uploads = new TextInputBuilder()
-    .setCustomId("uploads")
-    .setLabel("Uploads (optional links)")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(false)
-    .setMaxLength(300)
-    .setPlaceholder("Paste links to screenshots/logs if you have them")
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(issue),
-    new ActionRowBuilder().addComponents(tried),
-    new ActionRowBuilder().addComponents(email),
-    new ActionRowBuilder().addComponents(uploads)
-  )
-
-  return modal
-}
-
-function buildReplyModal(requestId) {
-  const modal = new ModalBuilder().setCustomId(`support_staff_reply_modal:${requestId}`).setTitle("Reply to user")
-
-  const subject = new TextInputBuilder()
-    .setCustomId("subject")
-    .setLabel("Subject (optional)")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(false)
-    .setMaxLength(100)
-    .setPlaceholder("MagicUI Support — Update")
-
-  const body = new TextInputBuilder()
-    .setCustomId("body")
-    .setLabel("Message")
-    .setStyle(TextInputStyle.Paragraph)
-    .setRequired(true)
-    .setMaxLength(1500)
-    .setPlaceholder("Write a clear, professional reply with next steps.")
-
-  const links = new TextInputBuilder()
-    .setCustomId("links")
-    .setLabel("Links (optional)")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(false)
-    .setMaxLength(300)
-    .setPlaceholder("Docs / image links / resources")
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(subject),
-    new ActionRowBuilder().addComponents(body),
-    new ActionRowBuilder().addComponents(links)
-  )
-
-  return modal
-}
-
-async function createAndLogRequest(interaction, client, payload) {
-  const guild = interaction.guild
-  const logChannel = await getLogChannel(guild)
-  if (!logChannel || !logChannel.isTextBased()) {
-    return { ok: false, error: "Log channel not found or not text-based." }
+  if (staffMessage && staffMessage.trim().length) {
+    e.addFields({ name: 'Staff Message', value: staffMessage.slice(0, 1024) });
   }
 
-  const store = ensureStore(client, guild.id)
-
-  const createdAt = nowTs()
-  const temp = {
-    plan: payload.plan || "N/A",
-    issue: payload.issue || "",
-    tried: payload.tried || "",
-    email: payload.email || "",
-    uploads: payload.uploads || [],
-    status: "open",
-    team: null,
-    createdAt,
-    lastActionById: null,
-    lastActionByTag: null
+  if (attachmentUrl && attachmentUrl.trim().length) {
+    e.addFields({ name: 'Attachment', value: attachmentUrl.slice(0, 1024) });
   }
 
-  const msg = await logChannel.send({
-    embeds: [buildLogEmbed(guild, interaction.user, temp)],
-    components: adminComponents("pending", false)
-  })
+  return e;
+}
 
-  await msg.edit({
-    embeds: [buildLogEmbed(guild, interaction.user, temp)],
-    components: adminComponents(msg.id, false)
-  }).catch(() => null)
+async function notifyAdminOnDmFailure(guild, staffUser, targetUserId) {
+  try {
+    const owner = await guild.fetchOwner().catch(() => null);
+    if (!owner) return false;
+    await owner.send(
+      `⚠️ DM delivery failed.\n` +
+      `Server: ${guild.name} (${guild.id})\n` +
+      `Staff: ${staffUser.tag} (${staffUser.id})\n` +
+      `Target user: ${targetUserId}`
+    ).catch(() => null);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  store[msg.id] = {
-    requestId: msg.id,
-    userId: interaction.user.id,
-    userTag: interaction.user.tag,
-    ...temp
+async function finalizeTicketClose(interaction, channel, client) {
+  const guild = interaction.guild;
+  if (!guild || !channel) return;
+
+  const color = 0x2b2d31;
+  const modlog = guild.channels.cache.get(MODLOG_ID);
+  const ownerId = getTicketOwnerId(channel);
+
+  let linkedVoiceChannel = null;
+  if (channel.topic) {
+    const match = channel.topic.match(/VOICE:(\d{17,20})/);
+    if (match) {
+      linkedVoiceChannel = guild.channels.cache.get(match[1]);
+    }
   }
 
-  persist(client)
+  const data = getFeedbackContainer(client, guild.id, channel.id);
+  const rating = data.rating;
+  const feedback = data.feedback;
+  const wantsTranscript = data.wantsTranscript;
+  const closingUserTag = data.closingUserTag || interaction.user.tag;
+
+  await channel
+    .setName(`✅｜closed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`)
+    .catch(() => null);
+
+  let desc =
+    `This ticket has been **closed by ${closingUserTag}**.\n` +
+    `A transcript will be saved and the channel will be deleted in a few seconds.`;
+
+  if (rating) {
+    desc += `\n\n**User rating:** ${rating}/5`;
+    if (feedback && feedback.trim().length > 0) {
+      desc += `\n**User feedback:** ${feedback}`;
+    }
+  }
+
+  await channel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle('✅ Ticket Closed')
+        .setColor(color)
+        .setDescription(desc)
+        .setTimestamp()
+    ]
+  });
+
+  const content = await saveTranscript(channel);
+  const file = new AttachmentBuilder(Buffer.from(content, 'utf-8'), {
+    name: `transcript-${channel.id}.txt`
+  });
+
+  const eLines = [
+    `**Channel:** #${channel.name}`,
+    `**Closed by:** ${closingUserTag}`,
+    `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
+  ];
+  if (rating) eLines.push(`**User rating:** ${rating}/5`);
+  if (feedback && feedback.trim().length > 0) eLines.push(`**User feedback:** ${feedback}`);
+
+  const e = new EmbedBuilder()
+    .setTitle(' <:check:1430525546608988203> Ticket Closed')
+    .setColor(color)
+    .setDescription(eLines.join('\n'))
+    .setTimestamp();
+
+  if (modlog) await modlog.send({ embeds: [e], files: [file] });
+
+  const owner = ownerId ? await client.users.fetch(ownerId).catch(() => null) : null;
+  if (owner && wantsTranscript) {
+    await owner
+      .send({
+        content: 'Here is the transcript for your closed MagicUI support ticket.',
+        files: [file]
+      })
+      .catch(() => null);
+  }
 
   try {
-    await interaction.user.send({ embeds: [buildPanelConfirmEmbed(guild, msg.id, temp.plan)] })
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({
+        content:
+          ' <:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
+        components: []
+      });
+    } else {
+      await interaction.reply({
+        content:
+          ' <:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
+        ephemeral: true
+      });
+    }
   } catch {}
 
-  return { ok: true, requestId: msg.id, messageId: msg.id }
+  setTimeout(async () => {
+    try {
+      if (linkedVoiceChannel) {
+        await linkedVoiceChannel.delete('Linked voice ticket channel closed');
+      }
+    } catch (err) {
+      console.error('Failed to delete linked voice channel:', err);
+    }
+
+    try {
+      await channel.delete('Ticket closed and deleted automatically');
+    } catch (err) {
+      console.error('Failed to delete ticket channel:', err);
+    }
+  }, 7000);
 }
 
 module.exports = {
-  name: "interactionCreate",
+  name: 'interactionCreate',
   async execute(interaction, client) {
     try {
-      if (interaction.isButton() && interaction.customId === "support_contact") {
-        if (supportsV2Modal()) {
-          const djs = require("discord.js")
-          const { LabelBuilder, TextDisplayBuilder, FileUploadBuilder, StringSelectMenuOptionBuilder } = djs
+      if (!client.__seenInteractions) client.__seenInteractions = new Set();
+      if (client.__seenInteractions.has(interaction.id)) return;
+      client.__seenInteractions.add(interaction.id);
+      setTimeout(() => client.__seenInteractions.delete(interaction.id), 60000);
 
-          const modal = new ModalBuilder().setCustomId("support_contact_modal_v2").setTitle("Contact MagicUI Support")
+      if (interaction.isButton() && interaction.customId === 'support_contact') {
+        const modal = new ModalBuilder()
+          .setCustomId('support_contact_modal')
+          .setTitle('Contact Support');
 
-          const intro = new TextDisplayBuilder().setContent(
-            "Fill this clearly so we can help faster.\n-# Add screenshots/logs using Upload if possible."
-          )
+        const issue = new TextInputBuilder()
+          .setCustomId('support_issue')
+          .setLabel('Your issue you’re experiencing')
+          .setPlaceholder('Describe what’s happening and what you need help with.')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(1000);
 
-          const planMenu = new StringSelectMenuBuilder()
-            .setCustomId("plan")
-            .setPlaceholder("Select your plan")
-            .setRequired(true)
+        const tried = new TextInputBuilder()
+          .setCustomId('support_tried')
+          .setLabel('Stuff you’ve tried already')
+          .setPlaceholder('List what you already tried to fix it.')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(1000);
+
+        const plan = new TextInputBuilder()
+          .setCustomId('support_plan')
+          .setLabel('Which version? (Free or Pro)')
+          .setPlaceholder('Free or Pro')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(20);
+
+        const email = new TextInputBuilder()
+          .setCustomId('support_email')
+          .setLabel('Email (optional)')
+          .setPlaceholder('Only if you want us to contact you outside Discord')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(80);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(issue),
+          new ActionRowBuilder().addComponents(tried),
+          new ActionRowBuilder().addComponents(plan),
+          new ActionRowBuilder().addComponents(email)
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      if (interaction.isModalSubmit() && interaction.customId === 'support_contact_modal') {
+        await interaction.deferReply({ ephemeral: true });
+
+        const guild = interaction.guild;
+        if (!guild) {
+          return interaction.editReply({ content: '⚠️ This can only be used in a server.' });
+        }
+
+        const issue = interaction.fields.getTextInputValue('support_issue');
+        const tried = interaction.fields.getTextInputValue('support_tried');
+        const plan = interaction.fields.getTextInputValue('support_plan');
+        const email = interaction.fields.getTextInputValue('support_email') || '';
+
+        const queue = await fetchChannel(guild, SUPPORT_QUEUE_ID);
+        if (!queue || !queue.isTextBased()) {
+          return interaction.editReply({
+            content: '⚠️ Support queue channel not found. Please contact an administrator.'
+          });
+        }
+
+        const store = ensureSupportStore(client, guild.id);
+
+        const embed = buildSupportRequestEmbed({
+          user: interaction.user,
+          issue,
+          tried,
+          plan,
+          email
+        });
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('support_reply')
+            .setLabel('Reply')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('support_resolve')
+            .setLabel('Resolve')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('support_cancel')
+            .setLabel('Cancel Request')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId('support_transfer')
+            .setLabel('Transfer')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+        const msg = await queue.send({
+          content: `REQ_USER:${interaction.user.id}`,
+          embeds: [embed],
+          components: [row]
+        });
+
+        store[msg.id] = {
+          userId: interaction.user.id,
+          createdAt: Date.now(),
+          issue,
+          tried,
+          plan,
+          email,
+          team: null
+        };
+
+        try {
+          await interaction.user.send(
+            `✅ Your support request has been submitted.\n` +
+            `We’ll respond here when possible. If we can’t DM you, staff may ask you to enable DMs.`
+          );
+        } catch {}
+
+        return interaction.editReply({
+          content:
+            ' <:check:1430525546608988203> Submitted. Our team will review it and respond when possible.'
+        });
+      }
+
+      if (interaction.isButton() && /^support_(reply|resolve|cancel|transfer)$/.test(interaction.customId)) {
+        const guild = interaction.guild;
+        const channel = interaction.channel;
+        if (!guild || !channel) return;
+
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({
+            content: '⚠️ You are not allowed to do that.',
+            ephemeral: true
+          });
+        }
+
+        const pendingMsg = interaction.message;
+        if (!pendingMsg) {
+          return interaction.reply({ content: '⚠️ Message not found.', ephemeral: true });
+        }
+
+        const userId = extractSupportUserIdFromMessage(pendingMsg);
+        if (!userId) {
+          return interaction.reply({ content: '⚠️ Request user not found.', ephemeral: true });
+        }
+
+        const issue = getSupportField(pendingMsg, 'Issue') || 'N/A';
+        const tried = getSupportField(pendingMsg, 'What you tried') || 'N/A';
+        const plan = getSupportField(pendingMsg, 'Plan') || 'N/A';
+        const email = getSupportField(pendingMsg, 'Email (optional)') || 'N/A';
+        const teamLabel = getSupportField(pendingMsg, 'Assigned Team');
+
+        if (interaction.customId === 'support_transfer') {
+          const embed = new EmbedBuilder()
+            .setTitle('Transfer Support Request')
+            .setColor(0x2b2d31)
+            .setDescription('Select which team should take over this request.');
+
+          const menu = new StringSelectMenuBuilder()
+            .setCustomId(`support_transfer_select_${pendingMsg.id}`)
+            .setPlaceholder('Select a team')
             .addOptions(
-              new StringSelectMenuOptionBuilder().setLabel("Free").setValue("free").setDescription("Using the free version"),
-              new StringSelectMenuOptionBuilder().setLabel("Pro").setValue("pro").setDescription("Using a paid plan")
-            )
+              {
+                label: 'Customer Support Team',
+                value: 'support',
+                description: 'Transfer to Customer Support'
+              },
+              {
+                label: 'Management Team',
+                value: 'management',
+                description: 'Transfer to Management'
+              },
+              {
+                label: 'Development Team',
+                value: 'dev',
+                description: 'Transfer to Development'
+              }
+            );
 
-          const planLabel = new LabelBuilder()
-            .setLabel("Plan")
-            .setDescription("Choose the plan you are on")
-            .setStringSelectMenuComponent(planMenu)
+          const row = new ActionRowBuilder().addComponents(menu);
 
-          const issue = new TextInputBuilder()
-            .setCustomId("issue")
+          return interaction.reply({
+            ephemeral: true,
+            embeds: [embed],
+            components: [row]
+          });
+        }
+
+        if (interaction.customId === 'support_reply') {
+          const modal = new ModalBuilder()
+            .setCustomId(`support_staff_reply_${pendingMsg.id}`)
+            .setTitle('Reply to User');
+
+          const msgInput = new TextInputBuilder()
+            .setCustomId('support_reply_message')
+            .setLabel('Message')
+            .setPlaceholder('Write the message you want to send to the user.')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setMaxLength(1000)
-            .setPlaceholder("What’s happening? What do you need help with?")
+            .setMaxLength(1500);
 
-          const issueLabel = new LabelBuilder()
-            .setLabel("Issue")
-            .setDescription("Explain it clearly")
-            .setTextInputComponent(issue)
-
-          const tried = new TextInputBuilder()
-            .setCustomId("tried")
-            .setStyle(TextInputStyle.Paragraph)
-            .setRequired(true)
-            .setMaxLength(1000)
-            .setPlaceholder("Commands you ran, configs, what happened…")
-
-          const triedLabel = new LabelBuilder()
-            .setLabel("What you tried")
-            .setDescription("Anything you tried so far")
-            .setTextInputComponent(tried)
-
-          const email = new TextInputBuilder()
-            .setCustomId("email")
+          const attachment = new TextInputBuilder()
+            .setCustomId('support_reply_attachment')
+            .setLabel('Attachment URL (optional)')
+            .setPlaceholder('Paste a link (image/file) if you want to include one.')
             .setStyle(TextInputStyle.Short)
             .setRequired(false)
-            .setMaxLength(80)
-            .setPlaceholder("Optional email")
+            .setMaxLength(300);
 
-          const emailLabel = new LabelBuilder()
-            .setLabel("Email (optional)")
-            .setDescription("Leave empty if Discord only")
-            .setTextInputComponent(email)
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(msgInput),
+            new ActionRowBuilder().addComponents(attachment)
+          );
 
-          const upload = new FileUploadBuilder()
-            .setCustomId("files")
-            .setRequired(false)
-            .setMinValues(0)
-            .setMaxValues(3)
-
-          const uploadLabel = new LabelBuilder()
-            .setLabel("Upload (optional)")
-            .setDescription("Screenshots, logs, short clips (max 3)")
-            .setFileUploadComponent(upload)
-
-          modal
-            .addTextDisplayComponents(intro)
-            .addLabelComponents(planLabel)
-            .addLabelComponents(issueLabel)
-            .addLabelComponents(triedLabel)
-            .addLabelComponents(emailLabel)
-            .addLabelComponents(uploadLabel)
-
-          return interaction.showModal(modal)
+          return interaction.showModal(modal);
         }
 
-        return interaction.reply(buildFallbackPlanPicker())
-      }
+        await interaction.deferReply({ ephemeral: true });
 
-      if (interaction.isStringSelectMenu() && interaction.customId === "support_plan_select") {
-        const drafts = ensureDrafts(client)
-        const plan = interaction.values?.[0] || "N/A"
-        drafts.set(`${interaction.guildId}:${interaction.user.id}`, { plan, at: Date.now() })
-        await interaction.deferUpdate()
-        return interaction.showModal(buildFallbackModal())
-      }
+        const resolvedChannel = await fetchChannel(guild, SUPPORT_RESOLVED_ID);
+        const targetUser = await client.users.fetch(userId).catch(() => null);
 
-      if (interaction.isModalSubmit() && (interaction.customId === "support_contact_modal_fallback" || interaction.customId === "support_contact_modal_v2")) {
-        await interaction.deferReply({ ephemeral: true })
-        const guild = interaction.guild
-        if (!guild) return interaction.editReply({ content: "⚠️ This can only be used in a server." })
-
-        let plan = "N/A"
-        let uploads = []
-
-        if (interaction.customId === "support_contact_modal_v2") {
-          if (typeof interaction.fields?.getStringSelectValues === "function") {
-            const v = interaction.fields.getStringSelectValues("plan")
-            plan = v?.[0] || "N/A"
-          }
-          if (typeof interaction.fields?.getUploadedFiles === "function") {
-            const files = interaction.fields.getUploadedFiles("files")
-            if (files && files.size) uploads = [...files.values()].map((a) => a.url).filter(Boolean)
-          }
-        } else {
-          const drafts = ensureDrafts(client)
-          const key = `${interaction.guildId}:${interaction.user.id}`
-          const draft = drafts.get(key)
-          if (draft?.plan) plan = draft.plan
-          drafts.delete(key)
-          const upl = interaction.fields.getTextInputValue("uploads") || ""
-          uploads = upl.trim().length ? upl.trim().split(/\s+/).slice(0, 8) : []
+        if (!resolvedChannel || !resolvedChannel.isTextBased()) {
+          return interaction.editReply({
+            content: '⚠️ Resolved log channel not found. Please contact an administrator.'
+          });
         }
 
-        const issue = interaction.fields.getTextInputValue("issue")
-        const tried = interaction.fields.getTextInputValue("tried")
-        const email = interaction.fields.getTextInputValue("email") || ""
+        if (!targetUser) {
+          return interaction.editReply({
+            content: '⚠️ Could not fetch target user.'
+          });
+        }
 
-        const result = await createAndLogRequest(interaction, client, { plan, issue, tried, email, uploads })
-        if (!result.ok) return interaction.editReply({ content: `⚠️ ${result.error || "Failed to log request."}` })
+        if (interaction.customId === 'support_resolve') {
+          const resolvedEmbed = buildSupportResolvedEmbed({
+            user: targetUser,
+            issue,
+            tried,
+            plan,
+            email: email === 'N/A' ? '' : email,
+            teamLabel,
+            action: 'Resolved',
+            staffUser: interaction.user
+          });
 
-        return interaction.editReply({ content: "✅ Submitted. Check your DMs for confirmation." })
+          await resolvedChannel.send({ embeds: [resolvedEmbed] }).catch(() => null);
+          await pendingMsg.delete().catch(() => null);
+
+          const store = ensureSupportStore(client, guild.id);
+          delete store[pendingMsg.id];
+
+          return interaction.editReply({
+            content: ' <:check:1430525546608988203> Marked as resolved and removed from pending.'
+          });
+        }
+
+        if (interaction.customId === 'support_cancel') {
+          const cancelledEmbed = buildSupportResolvedEmbed({
+            user: targetUser,
+            issue,
+            tried,
+            plan,
+            email: email === 'N/A' ? '' : email,
+            teamLabel,
+            action: 'Cancelled',
+            staffUser: interaction.user
+          });
+
+          await resolvedChannel.send({ embeds: [cancelledEmbed] }).catch(() => null);
+          await pendingMsg.delete().catch(() => null);
+
+          const store = ensureSupportStore(client, guild.id);
+          delete store[pendingMsg.id];
+
+          return interaction.editReply({
+            content: ' <:check:1430525546608988203> Cancelled and removed from pending.'
+          });
+        }
       }
 
-      if (interaction.isStringSelectMenu() && interaction.customId.startsWith("support_team:")) {
-        if (!isStaff(interaction.member)) return interaction.reply({ content: "⚠️ Not allowed.", ephemeral: true })
-        const guild = interaction.guild
-        if (!guild) return
+      if (interaction.isModalSubmit() && interaction.customId.startsWith('support_staff_reply_')) {
+        await interaction.deferReply({ ephemeral: true });
 
-        const requestId = interaction.customId.split(":")[1]
-        const store = ensureStore(client, guild.id)
-        const item = store[requestId]
-        if (!item) return interaction.reply({ content: "⚠️ Request not found.", ephemeral: true })
-        if (item.status === "resolved") return interaction.reply({ content: "⚠️ Already resolved.", ephemeral: true })
+        const guild = interaction.guild;
+        const channel = interaction.channel;
+        if (!guild || !channel) {
+          return interaction.editReply({ content: '⚠️ Invalid context.' });
+        }
 
-        item.team = interaction.values?.[0] || null
-        item.lastActionById = interaction.user.id
-        item.lastActionByTag = interaction.user.tag
-        persist(client)
+        if (!isStaffMember(interaction.member)) {
+          return interaction.editReply({ content: '⚠️ You are not allowed to do that.' });
+        }
 
-        const user = await client.users.fetch(item.userId).catch(() => null)
-        if (!user) return interaction.reply({ content: "⚠️ User not found.", ephemeral: true })
+        const pendingMsgId = interaction.customId.replace('support_staff_reply_', '');
+        const pendingChannel = await fetchChannel(guild, SUPPORT_QUEUE_ID);
+        if (!pendingChannel || !pendingChannel.isTextBased()) {
+          return interaction.editReply({ content: '⚠️ Support queue not found.' });
+        }
 
-        const embed = buildLogEmbed(guild, user, item)
-        await interaction.message.edit({ embeds: [embed], components: adminComponents(requestId, false) }).catch(() => null)
+        const pendingMsg = await pendingChannel.messages.fetch(pendingMsgId).catch(() => null);
+        if (!pendingMsg) {
+          return interaction.editReply({ content: '⚠️ Pending request not found.' });
+        }
 
-        return interaction.reply({ content: `✅ Assigned to **${teamLabel(item.team)}**.`, ephemeral: true })
-      }
+        const userId = extractSupportUserIdFromMessage(pendingMsg);
+        if (!userId) {
+          return interaction.editReply({ content: '⚠️ Request user not found.' });
+        }
 
-      if (interaction.isButton() && interaction.customId.startsWith("support_reply:")) {
-        if (!isStaff(interaction.member)) return interaction.reply({ content: "⚠️ Not allowed.", ephemeral: true })
-        const requestId = interaction.customId.split(":")[1]
-        const guild = interaction.guild
-        if (!guild) return interaction.reply({ content: "⚠️ Invalid context.", ephemeral: true })
+        const targetUser = await client.users.fetch(userId).catch(() => null);
+        if (!targetUser) {
+          return interaction.editReply({ content: '⚠️ Could not fetch target user.' });
+        }
 
-        const store = ensureStore(client, guild.id)
-        const item = store[requestId]
-        if (!item) return interaction.reply({ content: "⚠️ Request not found.", ephemeral: true })
-        if (item.status === "resolved") return interaction.reply({ content: "⚠️ This request is resolved.", ephemeral: true })
+        const issue = getSupportField(pendingMsg, 'Issue') || 'N/A';
+        const tried = getSupportField(pendingMsg, 'What you tried') || 'N/A';
+        const plan = getSupportField(pendingMsg, 'Plan') || 'N/A';
+        const email = getSupportField(pendingMsg, 'Email (optional)') || 'N/A';
+        const teamLabel = getSupportField(pendingMsg, 'Assigned Team');
 
-        return interaction.showModal(buildReplyModal(requestId))
-      }
+        const staffMessage = interaction.fields.getTextInputValue('support_reply_message');
+        const attachmentUrl = interaction.fields.getTextInputValue('support_reply_attachment') || '';
 
-      if (interaction.isModalSubmit() && interaction.customId.startsWith("support_staff_reply_modal:")) {
-        await interaction.deferReply({ ephemeral: true })
-        if (!isStaff(interaction.member)) return interaction.editReply({ content: "⚠️ Not allowed." })
+        const dmEmbed = new EmbedBuilder()
+          .setTitle('MagicUI Support')
+          .setColor(0x2b2d31)
+          .setDescription(staffMessage)
+          .setTimestamp();
 
-        const guild = interaction.guild
-        if (!guild) return interaction.editReply({ content: "⚠️ Invalid context." })
+        const dmFields = [];
+        if (issue && issue !== 'N/A') dmFields.push({ name: 'Your Issue', value: issue.slice(0, 1024) });
+        if (plan && plan !== 'N/A') dmFields.push({ name: 'Plan', value: plan.slice(0, 1024) });
+        if (dmFields.length) dmEmbed.addFields(dmFields);
 
-        const requestId = interaction.customId.split(":")[1]
-        const store = ensureStore(client, guild.id)
-        const item = store[requestId]
-        if (!item) return interaction.editReply({ content: "⚠️ Request not found." })
-        if (item.status === "resolved") return interaction.editReply({ content: "⚠️ Already resolved." })
-
-        const subject = interaction.fields.getTextInputValue("subject") || ""
-        const body = interaction.fields.getTextInputValue("body")
-        const links = interaction.fields.getTextInputValue("links") || ""
-
-        const user = await client.users.fetch(item.userId).catch(() => null)
-        if (!user) return interaction.editReply({ content: "⚠️ User not found." })
-
-        let dmOk = true
+        let dmOk = true;
         try {
-          const embed = buildUserReplyEmbed(guild, interaction.user, (subject.trim().length ? `**${subject.trim()}**\n\n` : "") + body)
-          const payload = links.trim().length ? { embeds: [embed], content: links.trim() } : { embeds: [embed] }
-          await user.send(payload)
+          const payload = attachmentUrl.trim().length
+            ? { embeds: [dmEmbed], content: attachmentUrl.trim() }
+            : { embeds: [dmEmbed] };
+          await targetUser.send(payload);
         } catch {
-          dmOk = false
+          dmOk = false;
         }
 
-        item.lastActionById = interaction.user.id
-        item.lastActionByTag = interaction.user.tag
-        persist(client)
+        if (!dmOk) {
+          await notifyAdminOnDmFailure(guild, interaction.user, targetUser.id);
+          return interaction.editReply({
+            content:
+              '⚠️ DM failed to deliver. I notified the server owner. Keep this request pending and try again later.'
+          });
+        }
 
-        if (!dmOk) return interaction.editReply({ content: "⚠️ DM failed. Ask the user to enable DMs." })
-        return interaction.editReply({ content: "✅ Reply sent by DM." })
+        const resolvedChannel = await fetchChannel(guild, SUPPORT_RESOLVED_ID);
+        if (resolvedChannel && resolvedChannel.isTextBased()) {
+          const resolvedEmbed = buildSupportResolvedEmbed({
+            user: targetUser,
+            issue,
+            tried,
+            plan,
+            email: email === 'N/A' ? '' : email,
+            teamLabel,
+            action: 'Responded',
+            staffUser: interaction.user,
+            staffMessage,
+            attachmentUrl
+          });
+          await resolvedChannel.send({ embeds: [resolvedEmbed] }).catch(() => null);
+        }
+
+        await pendingMsg.delete().catch(() => null);
+
+        const store = ensureSupportStore(client, guild.id);
+        delete store[pendingMsg.id];
+
+        return interaction.editReply({
+          content: ' <:check:1430525546608988203> Reply sent via DM and removed from pending.'
+        });
       }
 
-      if (interaction.isButton() && interaction.customId.startsWith("support_resolve:")) {
-        if (!isStaff(interaction.member)) return interaction.reply({ content: "⚠️ Not allowed.", ephemeral: true })
-        const guild = interaction.guild
-        if (!guild) return interaction.reply({ content: "⚠️ Invalid context.", ephemeral: true })
+      if (interaction.isStringSelectMenu() && interaction.customId.startsWith('support_transfer_select_')) {
+        const guild = interaction.guild;
+        const channel = interaction.channel;
+        if (!guild || !channel) return;
 
-        const requestId = interaction.customId.split(":")[1]
-        const store = ensureStore(client, guild.id)
-        const item = store[requestId]
-        if (!item) return interaction.reply({ content: "⚠️ Request not found.", ephemeral: true })
-        if (item.status === "resolved") return interaction.reply({ content: "⚠️ Already resolved.", ephemeral: true })
-
-        item.status = "resolved"
-        item.lastActionById = interaction.user.id
-        item.lastActionByTag = interaction.user.tag
-        persist(client)
-
-        const user = await client.users.fetch(item.userId).catch(() => null)
-        if (user) {
-          try {
-            await user.send({ embeds: [buildUserResolvedEmbed(guild)] })
-          } catch {}
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({
+            content: '⚠️ You are not allowed to transfer requests.',
+            ephemeral: true
+          });
         }
 
-        if (user) {
-          const embed = buildLogEmbed(guild, user, item)
-          await interaction.message.edit({ embeds: [embed], components: adminComponents(requestId, true) }).catch(() => null)
+        const pendingMsgId = interaction.customId.replace('support_transfer_select_', '');
+        const pendingChannel = await fetchChannel(guild, SUPPORT_QUEUE_ID);
+        if (!pendingChannel || !pendingChannel.isTextBased()) {
+          return interaction.reply({ content: '⚠️ Support queue not found.', ephemeral: true });
+        }
+
+        const pendingMsg = await pendingChannel.messages.fetch(pendingMsgId).catch(() => null);
+        if (!pendingMsg) {
+          return interaction.reply({ content: '⚠️ Pending request not found.', ephemeral: true });
+        }
+
+        const value = interaction.values[0];
+        let targetRoleId = null;
+        let label = '';
+
+        if (value === 'support') {
+          targetRoleId = ROLE_SUPPORT;
+          label = 'Customer Support Team';
+        } else if (value === 'management') {
+          targetRoleId = ROLE_MANAGEMENT;
+          label = 'Management Team';
+        } else if (value === 'dev') {
+          targetRoleId = ROLE_DEV;
+          label = 'Development Team';
+        }
+
+        const original = pendingMsg.embeds?.[0];
+        if (!original) {
+          return interaction.reply({ content: '⚠️ Embed not found.', ephemeral: true });
+        }
+
+        const eb = EmbedBuilder.from(original);
+        const fields = eb.data.fields || [];
+        const existingIndex = fields.findIndex((f) => (f?.name || '').toLowerCase() === 'assigned team');
+        if (existingIndex >= 0) fields[existingIndex].value = label;
+        else fields.push({ name: 'Assigned Team', value: label });
+        eb.setFields(fields);
+
+        await pendingMsg.edit({ embeds: [eb] }).catch(() => null);
+
+        const store = ensureSupportStore(client, guild.id);
+        if (store[pendingMsgId]) store[pendingMsgId].team = value;
+
+        await interaction.update({
+          content: `Transferred to ${label}.`,
+          embeds: [],
+          components: []
+        });
+
+        if (targetRoleId) {
+          await pendingChannel.send({
+            content: `<@&${targetRoleId}> Request transferred by ${interaction.user}.`,
+            allowedMentions: { roles: [targetRoleId] }
+          }).catch(() => null);
+        }
+
+        return;
+      }
+
+      if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_reason_select') {
+        const reason = interaction.values[0];
+        const modal = new ModalBuilder()
+          .setCustomId(`ticket_modal_${reason}`)
+          .setTitle('Submit Ticket Details');
+
+        const details = new TextInputBuilder()
+          .setCustomId('issue_details')
+          .setLabel('Describe your issue in detail')
+          .setPlaceholder('Explain what happened and what you need help with.')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(1000);
+
+        const steps = new TextInputBuilder()
+          .setCustomId('steps_taken')
+          .setLabel('Steps you’ve already tried')
+          .setPlaceholder('List anything you’ve already done to fix the issue.')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(800);
+
+        const notes = new TextInputBuilder()
+          .setCustomId('extra_notes')
+          .setLabel('Additional notes (optional)')
+          .setPlaceholder('Any extra context or links you’d like to include.')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(200);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(details),
+          new ActionRowBuilder().addComponents(steps),
+          new ActionRowBuilder().addComponents(notes)
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_transfer_select') {
+        const channel = interaction.channel;
+        const guild = interaction.guild;
+        if (!channel || !guild) return;
+
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({
+            content: '⚠️ You are not allowed to transfer tickets.',
+            ephemeral: true
+          });
+        }
+
+        const value = interaction.values[0];
+        let targetRoleId = null;
+        let label = '';
+
+        if (value === 'support') {
+          targetRoleId = ROLE_SUPPORT;
+          label = 'Customer Support Team';
+        } else if (value === 'management') {
+          targetRoleId = ROLE_MANAGEMENT;
+          label = 'Management Team';
+        } else if (value === 'dev') {
+          targetRoleId = ROLE_DEV;
+          label = 'Development Team';
+        }
+
+        await interaction.update({
+          content: `Ticket transferred to ${label}.`,
+          embeds: [],
+          components: []
+        });
+
+        const ownerId = getTicketOwnerId(channel);
+
+        const transferEmbed = new EmbedBuilder()
+          .setTitle('Ticket Transferred')
+          .setColor(0x2b2d31)
+          .setDescription(
+            `This ticket has been transferred to the **${label}** by ${interaction.user}.\n` +
+              'Please wait for a response from the new handler.'
+          )
+          .setTimestamp();
+
+        const mentions = [];
+        if (ownerId) mentions.push(`<@${ownerId}>`);
+        if (targetRoleId) mentions.push(`<@&${targetRoleId}>`);
+
+        await channel.send({
+          content: mentions.join(' ') || null,
+          embeds: [transferEmbed]
+        });
+
+        return;
+      }
+
+      if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket_modal_')) {
+        await interaction.deferReply({ ephemeral: true });
+
+        const type = interaction.customId.replace('ticket_modal_', '');
+        const issue_details = interaction.fields.getTextInputValue('issue_details');
+        const steps_taken = interaction.fields.getTextInputValue('steps_taken');
+        const extra_notes = interaction.fields.getTextInputValue('extra_notes') || 'N/A';
+
+        const nameBase = sanitizeName(interaction.user.username);
+        const parent = interaction.guild.channels.cache.get(CATEGORY_ID);
+        if (!parent) {
+          return interaction.editReply({
+            content: '⚠️ Category not found. Please contact an administrator.'
+          });
+        }
+
+        const overwrites = [
+          { id: interaction.guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
+          {
+            id: interaction.user.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ]
+          },
+          {
+            id: ROLE_SUPPORT,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory,
+              PermissionsBitField.Flags.ManageChannels
+            ]
+          },
+          {
+            id: ROLE_MANAGEMENT,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory,
+              PermissionsBitField.Flags.ManageChannels
+            ]
+          },
+          {
+            id: ROLE_DEV,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory,
+              PermissionsBitField.Flags.ManageChannels
+            ]
+          }
+        ];
+
+        let ch;
+        let voiceChannel = null;
+        const color = 0x2b2d31;
+
+        if (type === 'voice') {
+          const textName = `voice-ticket-${nameBase}`;
+          ch = await interaction.guild.channels.create({
+            name: textName,
+            type: ChannelType.GuildText,
+            parent: CATEGORY_ID,
+            permissionOverwrites: overwrites,
+            reason: `Voice ticket created by ${interaction.user.tag} (${interaction.user.id})`
+          });
+
+          voiceChannel = await interaction.guild.channels.create({
+            name: `🎧｜voice-${nameBase}`,
+            type: ChannelType.GuildVoice,
+            parent: CATEGORY_ID,
+            permissionOverwrites: overwrites,
+            reason: `Voice support channel for ${interaction.user.tag} (${interaction.user.id})`
+          });
+
+          await ch.setTopic(
+            `OWNER:${interaction.user.id} | TYPE:${type} | VOICE:${voiceChannel.id}`
+          );
         } else {
-          await interaction.message.edit({ components: adminComponents(requestId, true) }).catch(() => null)
+          const channelName = `ticket-${nameBase}-${type}`;
+          ch = await interaction.guild.channels.create({
+            name: channelName,
+            type: ChannelType.GuildText,
+            parent: CATEGORY_ID,
+            permissionOverwrites: overwrites,
+            reason: `Ticket created by ${interaction.user.tag} (${interaction.user.id})`
+          });
+
+          await ch.setTopic(`OWNER:${interaction.user.id} | TYPE:${type}`);
         }
 
-        return interaction.reply({ content: "✅ Marked as resolved.", ephemeral: true })
+        registerTicketOpen(client, ch);
+
+        let description =
+          `A new support ticket has been opened.\n\n` +
+          `**Submitted by:** ${interaction.user} \`(${interaction.user.id})\`\n` +
+          `**Ticket Type:** \`${type}\`\n\n` +
+          `**Issue Details:**\n${issue_details}\n\n` +
+          `**Steps Tried:**\n${steps_taken}\n\n` +
+          `**Additional Notes:**\n${extra_notes}\n\n` +
+          `A staff member will review your issue shortly. Please avoid tagging staff members unless necessary.`;
+
+        if (type === 'voice' && voiceChannel) {
+          description =
+            `A new **voice support meeting** has been requested.\n\n` +
+            `**Submitted by:** ${interaction.user} \`(${interaction.user.id})\`\n` +
+            `**Ticket Type:** \`${type}\`\n\n` +
+            `**Issue Details:**\n${issue_details}\n\n` +
+            `**Steps Tried:**\n${steps_taken}\n\n` +
+            `**Additional Notes:**\n${extra_notes}\n\n` +
+            `**Voice Channel:** ${voiceChannel.toString()}\n\n` +
+            `Please join the voice channel when you are ready. You can use mic, camera and screen share.\n` +
+            `A staff member will join as soon as possible.`;
+        }
+
+        const openEmbed = new EmbedBuilder()
+          .setTitle('Magic UI Support Ticket')
+          .setColor(color)
+          .setDescription(description)
+          .setImage(
+            'https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif?ex=68fa1f29&is=68f8cda9&hm=06e75e6659eff21a4e1cd2f3d4073b241c9e5e661ea85fdda42b6f8592ce0164'
+          )
+          .setTimestamp();
+
+        const staffRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('ticket_claim')
+            .setLabel('✅ Claim Ticket')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('ticket_hold')
+            .setLabel('⏸️ Put On Hold')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('ticket_transfer')
+            .setLabel('🔁 Transfer Ticket')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('ticket_close')
+            .setLabel('🗑️ Close Ticket')
+            .setStyle(ButtonStyle.Danger)
+        );
+
+        await ch.send({
+          content: `${interaction.user} <@&${ROLE_SUPPORT}> <@&${ROLE_MANAGEMENT}> <@&${ROLE_DEV}>`,
+          embeds: [openEmbed],
+          components: [staffRow]
+        });
+
+        const thread = await ch.threads.create({
+          name: `staff-${nameBase}`,
+          autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
+          reason: 'Private staff-only thread'
+        });
+
+        await thread.members.add(client.user.id).catch(() => null);
+        await thread.send(
+          '🧩 This is a private staff-only thread for internal discussion regarding this ticket.'
+        );
+
+        try {
+          if (type === 'voice' && voiceChannel) {
+            await interaction.user.send({
+              content:
+                `Hello there, 👋 Your **voice support** ticket has been successfully created: ${ch.toString()}\n` +
+                `Join ${voiceChannel.toString()} when you are ready.\n` +
+                `**A staff member will assist you soon.**`
+            });
+          } else {
+            await interaction.user.send({
+              content:
+                `Hello there, 👋 Your ticket has been successfully created: ${ch.toString()}\n` +
+                `**A staff member will assist you soon.**`
+            });
+          }
+        } catch {}
+
+        const modlog = interaction.guild.channels.cache.get(MODLOG_ID);
+        if (modlog) {
+          const ml = new EmbedBuilder()
+            .setTitle('Ticket Created')
+            .setColor(color)
+            .setDescription(
+              `**User:** ${interaction.user.tag} (${interaction.user.id})\n` +
+                `**Channel:** ${ch.toString()} (${ch.id})\n` +
+                `**Type:** ${type}\n` +
+                `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
+            );
+          await modlog.send({ embeds: [ml] });
+        }
+
+        return interaction.editReply({
+          content:
+            ' <:check:1430525546608988203> Your support ticket has been opened successfully.'
+        });
+      }
+
+      if (interaction.isModalSubmit() && interaction.customId === 'ticket_feedback_modal') {
+        const channel = interaction.channel;
+        const guild = interaction.guild;
+        if (!channel || !guild) {
+          return interaction.reply({ content: '⚠️ Channel not found.', ephemeral: true });
+        }
+
+        const ownerId = getTicketOwnerId(channel);
+        if (!ownerId || interaction.user.id !== ownerId) {
+          return interaction.reply({
+            content: 'Only the ticket owner can send this feedback.',
+            ephemeral: true
+          });
+        }
+
+        const feedback = interaction.fields.getTextInputValue('feedback_details');
+        const data = getFeedbackContainer(client, guild.id, channel.id);
+        data.feedback = feedback;
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('ticket_transcript_yes')
+            .setLabel('Yes, send transcript')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('ticket_transcript_no')
+            .setLabel('No, just close')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setLabel('Buy your advisor a Ko-fi ☕')
+            .setStyle(ButtonStyle.Link)
+            .setURL(KOFI_URL)
+        );
+
+        return interaction.reply({
+          content:
+            'Thank you for your feedback. Would you like to receive a transcript of this conversation?',
+          components: [row],
+          ephemeral: true
+        });
+      }
+
+      if (
+        interaction.isButton() &&
+        /^ticket_(claim|hold|close|transfer)$/.test(interaction.customId)
+      ) {
+        const channel = interaction.channel;
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          return interaction.reply({ content: '⚠️ Invalid ticket channel.', ephemeral: true });
+        }
+
+        if (interaction.customId === 'ticket_transfer') {
+          if (!isStaffMember(interaction.member)) {
+            return interaction.reply({
+              content: '⚠️ You are not allowed to transfer tickets.',
+              ephemeral: true
+            });
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle('Transfer Ticket')
+            .setColor(0x2b2d31)
+            .setDescription('Select which team should take over this ticket.');
+
+          const menu = new StringSelectMenuBuilder()
+            .setCustomId('ticket_transfer_select')
+            .setPlaceholder('Select a team to transfer to')
+            .addOptions(
+              {
+                label: 'Customer Support Team',
+                value: 'support',
+                description: 'Transfer to Customer Support'
+              },
+              {
+                label: 'Management Team',
+                value: 'management',
+                description: 'Transfer to Management'
+              },
+              {
+                label: 'Development Team',
+                value: 'dev',
+                description: 'Transfer to Development'
+              }
+            );
+
+          const row = new ActionRowBuilder().addComponents(menu);
+
+          return interaction.reply({
+            ephemeral: true,
+            embeds: [embed],
+            components: [row]
+          });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+        const color = 0x2b2d31;
+        const modlog = interaction.guild.channels.cache.get(MODLOG_ID);
+
+        if (interaction.customId === 'ticket_claim') {
+          if (!isStaffMember(interaction.member)) {
+            return interaction.editReply({
+              content: '⚠️ You are not allowed to claim tickets.'
+            });
+          }
+
+          const alreadyClaimedId = getTicketClaimedById(channel);
+          if (alreadyClaimedId) {
+            let claimedTag = `<@${alreadyClaimedId}>`;
+            try {
+              const claimedUser = await client.users.fetch(alreadyClaimedId);
+              if (claimedUser) claimedTag = claimedUser.tag;
+            } catch {}
+            return interaction.editReply({
+              content: `⚠️ This ticket has already been claimed by **${claimedTag}**.`
+            });
+          }
+
+          await channel
+            .setName(`📥｜claimed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`)
+            .catch(() => null);
+
+          const existingTopic = channel.topic || '';
+          let newTopic;
+          if (/CLAIMED_BY:\d{17,20}/.test(existingTopic)) {
+            newTopic = existingTopic.replace(
+              /CLAIMED_BY:\d{17,20}/,
+              `CLAIMED_BY:${interaction.user.id}`
+            );
+          } else if (existingTopic.length > 0) {
+            newTopic = `${existingTopic} | CLAIMED_BY:${interaction.user.id}`;
+          } else {
+            newTopic = `CLAIMED_BY:${interaction.user.id}`;
+          }
+          await channel.setTopic(newTopic).catch(() => null);
+
+          await channel.send({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('📥 Ticket Claimed')
+                .setColor(color)
+                .setDescription(
+                  `This ticket has been **claimed by ${interaction.user}**.\nYou will now receive customer support from the Magic UI team in this channel.`
+                )
+                .setTimestamp()
+            ]
+          });
+
+          await registerTicketClaim(client, channel);
+
+          await interaction.editReply({
+            content: ` <:check:1430525546608988203> Ticket claimed by ${interaction.user}.`
+          });
+
+          const e = new EmbedBuilder()
+            .setTitle('📥 Ticket Claimed')
+            .setColor(color)
+            .setDescription(
+              `**Channel:** ${channel}\n**Claimed by:** ${interaction.user.tag}\n**At:** <t:${Math.floor(
+                Date.now() / 1000
+              )}:F>`
+            );
+
+          if (modlog) await modlog.send({ embeds: [e] });
+          return;
+        }
+
+        if (interaction.customId === 'ticket_hold') {
+          await channel
+            .setName(`⏸️｜hold-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`)
+            .catch(() => null);
+
+          await channel.send({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('⏸️ Ticket On Hold')
+                .setColor(0xfaa61a)
+                .setDescription(`This ticket has been **put on hold by ${interaction.user}**.`)
+                .setTimestamp()
+            ]
+          });
+
+          await interaction.editReply({ content: '⏸️ Ticket marked as on hold.' });
+
+          const e = new EmbedBuilder()
+            .setTitle('⏸️ Ticket On Hold')
+            .setColor(color)
+            .setDescription(
+              `**Channel:** ${channel}\n**By:** ${interaction.user.tag}\n**At:** <t:${Math.floor(
+                Date.now() / 1000
+              )}:F>`
+            );
+
+          if (modlog) await modlog.send({ embeds: [e] });
+          return;
+        }
+
+        if (interaction.customId === 'ticket_close') {
+          const confirmRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('ticket_close_confirm')
+              .setLabel('Confirm Close')
+              .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+              .setCustomId('ticket_close_cancel')
+              .setLabel('Cancel')
+              .setStyle(ButtonStyle.Secondary)
+          );
+          return interaction.editReply({
+            content: 'Are you sure you want to close this ticket?',
+            components: [confirmRow]
+          });
+        }
+      }
+
+      if (interaction.isButton() && /^ticket_close_(confirm|cancel)$/.test(interaction.customId)) {
+        await interaction.deferUpdate();
+        const channel = interaction.channel;
+        const guild = interaction.guild;
+
+        if (interaction.customId === 'ticket_close_cancel') {
+          return interaction.editReply({ content: '❌ Ticket closure cancelled.', components: [] });
+        }
+
+        if (!channel || !guild) {
+          return interaction.editReply({
+            content: '⚠️ Channel not found.',
+            components: []
+          });
+        }
+
+        const ownerId = getTicketOwnerId(channel);
+        if (!ownerId) {
+          return interaction.editReply({
+            content: '⚠️ Ticket owner not found. Please close this ticket manually.',
+            components: []
+          });
+        }
+
+        const data = getFeedbackContainer(client, guild.id, channel.id);
+        data.closingUserId = interaction.user.id;
+        data.closingUserTag = interaction.user.tag;
+        data.rating = null;
+        data.feedback = null;
+        data.wantsTranscript = false;
+
+        const ratingEmbed = new EmbedBuilder()
+          .setTitle('Rate Your Support Experience')
+          .setColor(0x2b2d31)
+          .setDescription(
+            'How would you rate your customer support experience with Magic UI?\n\n' +
+              'Please choose a rating from **1** (poor) to **5** (excellent).'
+          );
+
+        const ratingRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('ticket_rate_1')
+            .setLabel('1')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('ticket_rate_2')
+            .setLabel('2')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('ticket_rate_3')
+            .setLabel('3')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('ticket_rate_4')
+            .setLabel('4')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('ticket_rate_5')
+            .setLabel('5')
+            .setStyle(ButtonStyle.Success)
+        );
+
+        await channel.send({
+          content: `<@${ownerId}>`,
+          embeds: [ratingEmbed],
+          components: [ratingRow]
+        });
+
+        return interaction.editReply({
+          content:
+            'A rating request has been sent to the user. The ticket will be closed after feedback is submitted.',
+          components: []
+        });
+      }
+
+      if (interaction.isButton() && /^ticket_rate_[1-5]$/.test(interaction.customId)) {
+        const channel = interaction.channel;
+        const guild = interaction.guild;
+        if (!channel || !guild) {
+          return interaction.reply({ content: '⚠️ Channel not found.', ephemeral: true });
+        }
+
+        const ownerId = getTicketOwnerId(channel);
+        if (!ownerId) {
+          return interaction.reply({
+            content: '⚠️ Ticket owner not found.',
+            ephemeral: true
+          });
+        }
+
+        if (interaction.user.id !== ownerId) {
+          return interaction.reply({
+            content: 'Only the ticket owner can rate this support.',
+            ephemeral: true
+          });
+        }
+
+        const rating = parseInt(interaction.customId.split('_')[2], 10);
+        const data = getFeedbackContainer(client, guild.id, channel.id);
+        data.rating = rating;
+
+        if (rating <= 4) {
+          const modal = new ModalBuilder()
+            .setCustomId('ticket_feedback_modal')
+            .setTitle('Help Us Improve');
+
+          const input = new TextInputBuilder()
+            .setCustomId('feedback_details')
+            .setLabel('What could we improve?')
+            .setPlaceholder('Tell us what went wrong or what we could do better.')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+            .setMaxLength(800);
+
+          modal.addComponents(new ActionRowBuilder().addComponents(input));
+
+          return interaction.showModal(modal);
+        }
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('ticket_transcript_yes')
+            .setLabel('Yes, send transcript')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('ticket_transcript_no')
+            .setLabel('No, just close')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setLabel('☕ Support on Ko-fi')
+            .setStyle(ButtonStyle.Link)
+            .setURL(KOFI_URL)
+        );
+
+        return interaction.reply({
+          content:
+            'Thank you for rating **5/5**. Would you like to receive a transcript of this conversation?',
+          components: [row],
+          ephemeral: true
+        });
+      }
+
+      if (
+        interaction.isButton() &&
+        (interaction.customId === 'ticket_transcript_yes' ||
+          interaction.customId === 'ticket_transcript_no')
+      ) {
+        const channel = interaction.channel;
+        const guild = interaction.guild;
+        if (!channel || !guild) {
+          return interaction.reply({ content: '⚠️ Channel not found.', ephemeral: true });
+        }
+
+        const ownerId = getTicketOwnerId(channel);
+        if (!ownerId || interaction.user.id !== ownerId) {
+          return interaction.reply({
+            content: 'Only the ticket owner can choose this.',
+            ephemeral: true
+          });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        const data = getFeedbackContainer(client, guild.id, channel.id);
+        data.wantsTranscript = interaction.customId === 'ticket_transcript_yes';
+
+        await finalizeTicketClose(interaction, channel, client);
+        return;
       }
     } catch (err) {
-      console.error("❌ interactionCreate error:", err)
+      console.error('Error in interactionCreate handler:', err);
       try {
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ content: "⚠️ Something went wrong.", ephemeral: true })
+          await interaction.reply({
+            content: '⚠️ Something went wrong while handling this interaction.',
+            ephemeral: true
+          });
         } else {
-          await interaction.followUp({ content: "⚠️ Something went wrong.", ephemeral: true })
+          await interaction.followUp({
+            content: '⚠️ Something went wrong while handling this interaction.',
+            ephemeral: true
+          });
         }
       } catch {}
     }
   }
-}
+};

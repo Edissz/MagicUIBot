@@ -17,12 +17,17 @@ const client = new Client({
 
 client.commands = new Collection()
 client.prefix = "!"
-client.modlogChannelId = "1355260778965373000"
 
 const commandsPath = path.join(__dirname, "commands")
 for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))) {
   const cmd = require(path.join(commandsPath, file))
-  if (cmd?.name) client.commands.set(cmd.name, cmd)
+  if (!cmd?.name) continue
+  client.commands.set(cmd.name, cmd)
+  if (Array.isArray(cmd.aliases)) {
+    for (const a of cmd.aliases) {
+      if (typeof a === "string" && a.trim().length) client.commands.set(a.trim().toLowerCase(), cmd)
+    }
+  }
 }
 
 const eventsPath = path.join(__dirname, "events")

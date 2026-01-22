@@ -8,12 +8,14 @@ const {
 
 const PANEL_COOLDOWN_MS = 30000
 const WHITE = 0xffffff
+const BRAND = 0x2b79ee
 
 const PANEL_IMAGE =
   "https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif"
 
 module.exports = {
   name: "ticketpanel",
+  aliases: ["ticketpad"],
   async execute(message, args, client) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
       return message.reply("<:cross:1430525603701850165> You lack permission.")
@@ -36,16 +38,17 @@ module.exports = {
       .setAuthor({ name: "MagicUI Support", iconURL: icon })
       .setTitle("Contact MagicUI Support")
       .setDescription(
-        "**Need help with MagicUI?**\n\n" +
-          "Use this support form for:\n" +
-          "• Technical issues (install/build/config/deploy)\n" +
-          "• Account access / permissions\n" +
-          "• Billing & plan issues\n\n" +
-          "**Before submitting:**\n" +
-          "• Add clear steps + screenshots/logs\n" +
-          "• Pick your plan (Free/Pro)\n" +
-          "• Keep it focused (1 issue per request)\n\n" +
-          "Press **Contact Support** to open the form. Our team will respond as soon as possible."
+        "**Welcome to MagicUI Support.**\n\n" +
+          "Use this form when you need help with:\n" +
+          "• Install / build / config / deploy issues\n" +
+          "• Pro access & account permissions\n" +
+          "• Billing & plan problems\n\n" +
+          "**To get help faster:**\n" +
+          "• Be specific (1 issue per request)\n" +
+          "• Include what you already tried\n" +
+          "• Add screenshots/logs if possible\n\n" +
+          "Press **Contact Support** to open the support form.\n" +
+          "You’ll receive a confirmation DM after submitting."
       )
       .setImage(PANEL_IMAGE)
       .setFooter({ text: "MagicUI Support" })
@@ -59,7 +62,6 @@ module.exports = {
     )
 
     await message.channel.send({ embeds: [embed], components: [row] })
-
     return message.reply("<:check:1430525546608988203> Support panel posted.")
   }
 }

@@ -13,21 +13,20 @@ module.exports = {
 ## 👋 Welcome to <:166878038:1346947141570007060> **Magic UI!**
 **Start exploring with these key channels:**
 
-• 📜 [Rules & Faqs](https://discord.com/channels/1151315619246002176/1151318734158446623)
-• ❓ [FAQs](https://discord.com/channels/1151315619246002176/1383896107012063333)
-• 🧩 [New Components & Releases](https://discord.com/channels/1151315619246002176/1151315620013551751)
-• 🎨 [Showcase](https://discord.com/channels/1151315619246002176/1362409572165226596)
-• 🙋‍♂️ [Talk with others](https://discord.com/channels/1151315619246002176/1151315620013551755)
-• 📩 [Feedback](https://discord.com/channels/1151315619246002176/1426517448353517671)
+ [Rules & Faqs](https://discord.com/channels/1151315619246002176/1151318734158446623)
+ [FAQs](https://discord.com/channels/1151315619246002176/1383896107012063333)
+ [New Components & Releases](https://discord.com/channels/1151315619246002176/1151315620013551751)
+ [Showcase](https://discord.com/channels/1151315619246002176/1362409572165226596)
+ [Talk with others](https://discord.com/channels/1151315619246002176/1151315620013551755)
 
-**<:techouse210:1421840914653122631> Need help?**
+**<:messagenotification01StrokeRound:1463199182541033543> Need help?**
 Jump to our [Support Channel](https://discord.com/channels/1151315619246002176/1405208521871724605)
 
-✨ *Enjoy your stay!*
+-# <:coffee03StrokeRounded:1463199239558533212> Enjoy your stay!
         `)
         .setColor('#FFFFFF')
         .setImage('https://magicui.design/og')
-        .setFooter({ text: 'Magic UI • Modern Next.js Templates' });
+        .setFooter({ text: 'Magic UI - Modern Next.js Templates' });
 
       const button = new ButtonBuilder()
         .setLabel('Visit Magic UI')

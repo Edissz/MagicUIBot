@@ -1,4 +1,3 @@
-// events/interactionCreate.js
 const {
   ChannelType,
   PermissionsBitField,
@@ -14,10 +13,7 @@ const {
   StringSelectMenuBuilder
 } = require('discord.js');
 const { saveTranscript } = require('../utils/transcript');
-const {
-  registerTicketOpen,
-  registerTicketClaim
-} = require('../utils/ticketStats');
+const { registerTicketOpen, registerTicketClaim } = require('../utils/ticketStats');
 
 const CATEGORY_ID = '1405640921017745419';
 const MODLOG_ID = '1441524770083573770';
@@ -29,11 +25,24 @@ const ROLE_MANAGEMENT = '1441080027113586841';
 const ROLE_DEV = '1441079871911493693';
 const STAFF_ROLE_NAMES_FOR_BUTTONS = ['Moderator', 'Administrator', 'Manager'];
 
-const KOFI_URL =
-  'https://ko-fi.com/summary/984bdf5c-a724-4489-b324-9f44d2d85f1e';
+const KOFI_URL = 'https://ko-fi.com/summary/984bdf5c-a724-4489-b324-9f44d2d85f1e';
+const GITHUB_ISSUES_URL = 'https://github.com/magicuidesign/magicui/issues';
+
+const BRAND_COLOR = 0x2b79ee;
+const DARK_COLOR = 0x2b2d31;
 
 function sanitizeName(s) {
   return s.toLowerCase().replace(/[^a-z0-9\-]/g, '').slice(0, 20) || 'ticket';
+}
+
+function slugifyType(s) {
+  return (s || 'ticket')
+    .toLowerCase()
+    .replace(/_/g, '-')
+    .replace(/[^a-z0-9\-]/g, '-')
+    .replace(/\-+/g, '-')
+    .replace(/^\-+|\-+$/g, '')
+    .slice(0, 24) || 'ticket';
 }
 
 function isStaffMember(member) {
@@ -113,23 +122,21 @@ async function fetchChannel(guild, id) {
 function buildSupportRequestEmbed({ user, issue, tried, plan, email, teamLabel, statusLabel }) {
   const e = new EmbedBuilder()
     .setTitle(statusLabel ? `Support Request · ${statusLabel}` : 'New Support Request')
-    .setColor(0x2b2d31)
+    .setColor(DARK_COLOR)
     .setDescription(
       `**User:** ${user} \`(${user.id})\`\n` +
       `**Created:** <t:${Math.floor(Date.now() / 1000)}:F>`
     )
     .addFields(
-      { name: 'Issue', value: issue || 'N/A' },
-      { name: 'What you tried', value: tried || 'N/A' },
-      { name: 'Plan', value: plan || 'N/A' },
-      { name: 'Email (optional)', value: email && email.trim().length ? email : 'N/A' }
+      { name: 'Issue', value: (issue || 'N/A').slice(0, 1024) },
+      { name: 'What you tried', value: (tried || 'N/A').slice(0, 1024) },
+      { name: 'Plan', value: (plan || 'N/A').slice(0, 1024) },
+      { name: 'Email (optional)', value: email && email.trim().length ? email.slice(0, 1024) : 'N/A' }
     )
     .setFooter({ text: `REQ_USER:${user.id}` })
     .setTimestamp();
 
-  if (teamLabel) {
-    e.addFields({ name: 'Assigned Team', value: teamLabel });
-  }
+  if (teamLabel) e.addFields({ name: 'Assigned Team', value: teamLabel });
 
   return e;
 }
@@ -137,17 +144,17 @@ function buildSupportRequestEmbed({ user, issue, tried, plan, email, teamLabel, 
 function buildSupportResolvedEmbed({ user, issue, tried, plan, email, teamLabel, action, staffUser, staffMessage, attachmentUrl }) {
   const e = new EmbedBuilder()
     .setTitle(`Support Request · ${action}`)
-    .setColor(0x2b2d31)
+    .setColor(DARK_COLOR)
     .setDescription(
       `**User:** ${user} \`(${user.id})\`\n` +
       `**Handled by:** ${staffUser} \`(${staffUser.id})\`\n` +
       `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
     )
     .addFields(
-      { name: 'Issue', value: issue || 'N/A' },
-      { name: 'What you tried', value: tried || 'N/A' },
-      { name: 'Plan', value: plan || 'N/A' },
-      { name: 'Email (optional)', value: email && email.trim().length ? email : 'N/A' }
+      { name: 'Issue', value: (issue || 'N/A').slice(0, 1024) },
+      { name: 'What you tried', value: (tried || 'N/A').slice(0, 1024) },
+      { name: 'Plan', value: (plan || 'N/A').slice(0, 1024) },
+      { name: 'Email (optional)', value: email && email.trim().length ? email.slice(0, 1024) : 'N/A' }
     )
     .setFooter({ text: `REQ_USER:${user.id}` })
     .setTimestamp();
@@ -185,16 +192,14 @@ async function finalizeTicketClose(interaction, channel, client) {
   const guild = interaction.guild;
   if (!guild || !channel) return;
 
-  const color = 0x2b2d31;
+  const color = DARK_COLOR;
   const modlog = guild.channels.cache.get(MODLOG_ID);
   const ownerId = getTicketOwnerId(channel);
 
   let linkedVoiceChannel = null;
   if (channel.topic) {
     const match = channel.topic.match(/VOICE:(\d{17,20})/);
-    if (match) {
-      linkedVoiceChannel = guild.channels.cache.get(match[1]);
-    }
+    if (match) linkedVoiceChannel = guild.channels.cache.get(match[1]) || null;
   }
 
   const data = getFeedbackContainer(client, guild.id, channel.id);
@@ -203,9 +208,7 @@ async function finalizeTicketClose(interaction, channel, client) {
   const wantsTranscript = data.wantsTranscript;
   const closingUserTag = data.closingUserTag || interaction.user.tag;
 
-  await channel
-    .setName(`✅｜closed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`)
-    .catch(() => null);
+  await channel.setName(`✅｜closed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
 
   let desc =
     `This ticket has been **closed by ${closingUserTag}**.\n` +
@@ -213,9 +216,7 @@ async function finalizeTicketClose(interaction, channel, client) {
 
   if (rating) {
     desc += `\n\n**User rating:** ${rating}/5`;
-    if (feedback && feedback.trim().length > 0) {
-      desc += `\n**User feedback:** ${feedback}`;
-    }
+    if (feedback && feedback.trim().length > 0) desc += `\n**User feedback:** ${feedback}`;
   }
 
   await channel.send({
@@ -242,34 +243,30 @@ async function finalizeTicketClose(interaction, channel, client) {
   if (feedback && feedback.trim().length > 0) eLines.push(`**User feedback:** ${feedback}`);
 
   const e = new EmbedBuilder()
-    .setTitle(' <:check:1430525546608988203> Ticket Closed')
+    .setTitle('<:check:1430525546608988203> Ticket Closed')
     .setColor(color)
     .setDescription(eLines.join('\n'))
     .setTimestamp();
 
-  if (modlog) await modlog.send({ embeds: [e], files: [file] });
+  if (modlog) await modlog.send({ embeds: [e], files: [file] }).catch(() => null);
 
   const owner = ownerId ? await client.users.fetch(ownerId).catch(() => null) : null;
   if (owner && wantsTranscript) {
-    await owner
-      .send({
-        content: 'Here is the transcript for your closed MagicUI support ticket.',
-        files: [file]
-      })
-      .catch(() => null);
+    await owner.send({
+      content: 'Here is the transcript for your closed MagicUI support ticket.',
+      files: [file]
+    }).catch(() => null);
   }
 
   try {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({
-        content:
-          ' <:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
+        content: '<:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
         components: []
       });
     } else {
       await interaction.reply({
-        content:
-          ' <:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
+        content: '<:check:1430525546608988203> Thank you for your feedback. This ticket is now closed.',
         ephemeral: true
       });
     }
@@ -277,9 +274,7 @@ async function finalizeTicketClose(interaction, channel, client) {
 
   setTimeout(async () => {
     try {
-      if (linkedVoiceChannel) {
-        await linkedVoiceChannel.delete('Linked voice ticket channel closed');
-      }
+      if (linkedVoiceChannel) await linkedVoiceChannel.delete('Linked voice ticket channel closed');
     } catch (err) {
       console.error('Failed to delete linked voice channel:', err);
     }
@@ -290,6 +285,148 @@ async function finalizeTicketClose(interaction, channel, client) {
       console.error('Failed to delete ticket channel:', err);
     }
   }, 7000);
+}
+
+function ticketTypeLabel(type) {
+  const map = {
+    technical_support: 'Technical Support',
+    billing: 'Billing & Payments',
+    account_access: 'Account & Access',
+    management: 'Management',
+    voice: 'Voice Support'
+  };
+  return map[type] || type;
+}
+
+function buildTicketOpenEmbed({ guild, user, type, issue_details, steps_taken, extra_notes, voiceChannel }) {
+  const tLabel = ticketTypeLabel(type);
+  const base = new EmbedBuilder()
+    .setTitle(`🎫 MagicUI Ticket · ${tLabel}`)
+    .setColor(BRAND_COLOR)
+    .setDescription(
+      `**Owner:** ${user} \`(${user.id})\`\n` +
+      `**Status:** Waiting for staff claim\n` +
+      `**Created:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n` +
+      `Please keep everything in one thread, avoid pinging staff, and include screenshots/logs if possible.`
+    )
+    .addFields(
+      { name: 'Issue', value: (issue_details || 'N/A').slice(0, 1024) },
+      { name: 'What you tried', value: (steps_taken || 'N/A').slice(0, 1024) },
+      { name: 'Extra notes', value: (extra_notes || 'N/A').slice(0, 1024) }
+    )
+    .setThumbnail(guild?.iconURL?.({ dynamic: true, size: 128 }) || null)
+    .setImage('https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif?ex=68fa1f29&is=68f8cda9&hm=06e75e6659eff21a4e1cd2f3d4073b241c9e5e661ea85fdda42b6f8592ce0164')
+    .setTimestamp();
+
+  if (voiceChannel) {
+    base.addFields({ name: 'Voice Channel', value: voiceChannel.toString() });
+  }
+
+  if (type === 'technical_support') {
+    base.addFields({
+      name: 'Quick note',
+      value: 'If this is a **bug**, use the **Bug Report (GitHub)** option from the dropdown and open an issue.'
+    });
+  }
+
+  return base;
+}
+
+function buildBugReportEphemeral() {
+  const e = new EmbedBuilder()
+    .setTitle('🐞 Bug Report')
+    .setColor(BRAND_COLOR)
+    .setDescription(
+      `If you have a bug to report, please open an issue **here** and we will fix it as soon as possible.\n\n` +
+      `**Open issues:** ${GITHUB_ISSUES_URL}\n\n` +
+      `Include:\n` +
+      `• Steps to reproduce\n` +
+      `• Expected vs actual behavior\n` +
+      `• Screenshots / screen recording\n` +
+      `• Versions (Node, package, component)\n\n` +
+      `If you need hands-on help (install/build/config), choose **Technical Support** instead.`
+    );
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setStyle(ButtonStyle.Link)
+      .setURL(GITHUB_ISSUES_URL)
+      .setLabel('Open GitHub Issues')
+  );
+
+  return { embeds: [e], components: [row], ephemeral: true };
+}
+
+function modalCopy(reason) {
+  if (reason === 'technical_support') {
+    return {
+      title: 'Technical Support',
+      detailsLabel: 'Describe the technical issue (not a bug report)',
+      detailsPh: 'e.g. install/build error, config, deployment, auth, TypeScript, etc.',
+      stepsLabel: 'What you’ve already tried',
+      stepsPh: 'Commands you ran, changes you made, and what happened.',
+      notesLabel: 'Links / extra context (optional)',
+      notesPh: 'Paste logs, repo link, screenshots, or short context.'
+    };
+  }
+
+  if (reason === 'billing') {
+    return {
+      title: 'Billing & Payments',
+      detailsLabel: 'Describe the billing/payment issue',
+      detailsPh: 'e.g. invoice, charge, refund, access not granted, etc.',
+      stepsLabel: 'What you’ve already tried',
+      stepsPh: 'What you checked or actions you took.',
+      notesLabel: 'Order info / extra notes (optional)',
+      notesPh: 'Invoice/order ID, email used, anything helpful.'
+    };
+  }
+
+  if (reason === 'account_access') {
+    return {
+      title: 'Account & Access',
+      detailsLabel: 'Describe the access issue',
+      detailsPh: 'e.g. roles, Pro access, auth, permissions, etc.',
+      stepsLabel: 'What you’ve already tried',
+      stepsPh: 'What you attempted and what happened.',
+      notesLabel: 'Extra notes (optional)',
+      notesPh: 'Any links or details that help.'
+    };
+  }
+
+  if (reason === 'management') {
+    return {
+      title: 'Management',
+      detailsLabel: 'Describe the issue',
+      detailsPh: 'Keep it short and clear.',
+      stepsLabel: 'What you’ve already tried',
+      stepsPh: 'If relevant.',
+      notesLabel: 'Extra notes (optional)',
+      notesPh: 'Any context.'
+    };
+  }
+
+  if (reason === 'voice') {
+    return {
+      title: 'Voice Support Request',
+      detailsLabel: 'What do you need help with in voice?',
+      detailsPh: 'Explain what you want to solve in a live call.',
+      stepsLabel: 'What you’ve already tried',
+      stepsPh: 'Anything you tested before requesting voice.',
+      notesLabel: 'Availability / extra notes (optional)',
+      notesPh: 'Times you can join, timezone, links, etc.'
+    };
+  }
+
+  return {
+    title: 'Submit Ticket Details',
+    detailsLabel: 'Describe your issue in detail',
+    detailsPh: 'Explain what happened and what you need help with.',
+    stepsLabel: 'Steps you’ve already tried',
+    stepsPh: 'List anything you’ve already done to fix the issue.',
+    notesLabel: 'Additional notes (optional)',
+    notesPh: 'Any extra context or links you’d like to include.'
+  };
 }
 
 module.exports = {
@@ -379,22 +516,10 @@ module.exports = {
         });
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('support_reply')
-            .setLabel('Reply')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('support_resolve')
-            .setLabel('Resolve')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('support_cancel')
-            .setLabel('Cancel Request')
-            .setStyle(ButtonStyle.Danger),
-          new ButtonBuilder()
-            .setCustomId('support_transfer')
-            .setLabel('Transfer')
-            .setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId('support_reply').setLabel('Reply').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('support_resolve').setLabel('Resolve').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('support_cancel').setLabel('Cancel Request').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId('support_transfer').setLabel('Transfer').setStyle(ButtonStyle.Secondary)
         );
 
         const msg = await queue.send({
@@ -421,8 +546,7 @@ module.exports = {
         } catch {}
 
         return interaction.editReply({
-          content:
-            ' <:check:1430525546608988203> Submitted. Our team will review it and respond when possible.'
+          content: '<:check:1430525546608988203> Submitted. Our team will review it and respond when possible.'
         });
       }
 
@@ -457,28 +581,16 @@ module.exports = {
         if (interaction.customId === 'support_transfer') {
           const embed = new EmbedBuilder()
             .setTitle('Transfer Support Request')
-            .setColor(0x2b2d31)
+            .setColor(DARK_COLOR)
             .setDescription('Select which team should take over this request.');
 
           const menu = new StringSelectMenuBuilder()
             .setCustomId(`support_transfer_select_${pendingMsg.id}`)
             .setPlaceholder('Select a team')
             .addOptions(
-              {
-                label: 'Customer Support Team',
-                value: 'support',
-                description: 'Transfer to Customer Support'
-              },
-              {
-                label: 'Management Team',
-                value: 'management',
-                description: 'Transfer to Management'
-              },
-              {
-                label: 'Development Team',
-                value: 'dev',
-                description: 'Transfer to Development'
-              }
+              { label: 'Customer Support Team', value: 'support', description: 'Transfer to Customer Support' },
+              { label: 'Management Team', value: 'management', description: 'Transfer to Management' },
+              { label: 'Development Team', value: 'dev', description: 'Transfer to Development' }
             );
 
           const row = new ActionRowBuilder().addComponents(menu);
@@ -531,9 +643,7 @@ module.exports = {
         }
 
         if (!targetUser) {
-          return interaction.editReply({
-            content: '⚠️ Could not fetch target user.'
-          });
+          return interaction.editReply({ content: '⚠️ Could not fetch target user.' });
         }
 
         if (interaction.customId === 'support_resolve') {
@@ -555,7 +665,7 @@ module.exports = {
           delete store[pendingMsg.id];
 
           return interaction.editReply({
-            content: ' <:check:1430525546608988203> Marked as resolved and removed from pending.'
+            content: '<:check:1430525546608988203> Marked as resolved and removed from pending.'
           });
         }
 
@@ -578,7 +688,7 @@ module.exports = {
           delete store[pendingMsg.id];
 
           return interaction.editReply({
-            content: ' <:check:1430525546608988203> Cancelled and removed from pending.'
+            content: '<:check:1430525546608988203> Cancelled and removed from pending.'
           });
         }
       }
@@ -628,7 +738,7 @@ module.exports = {
 
         const dmEmbed = new EmbedBuilder()
           .setTitle('MagicUI Support')
-          .setColor(0x2b2d31)
+          .setColor(DARK_COLOR)
           .setDescription(staffMessage)
           .setTimestamp();
 
@@ -678,7 +788,7 @@ module.exports = {
         delete store[pendingMsg.id];
 
         return interaction.editReply({
-          content: ' <:check:1430525546608988203> Reply sent via DM and removed from pending.'
+          content: '<:check:1430525546608988203> Reply sent via DM and removed from pending.'
         });
       }
 
@@ -755,30 +865,37 @@ module.exports = {
 
       if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_reason_select') {
         const reason = interaction.values[0];
+
+        if (reason === 'bug_report') {
+          return interaction.reply(buildBugReportEphemeral());
+        }
+
+        const copy = modalCopy(reason);
+
         const modal = new ModalBuilder()
           .setCustomId(`ticket_modal_${reason}`)
-          .setTitle('Submit Ticket Details');
+          .setTitle(copy.title);
 
         const details = new TextInputBuilder()
           .setCustomId('issue_details')
-          .setLabel('Describe your issue in detail')
-          .setPlaceholder('Explain what happened and what you need help with.')
+          .setLabel(copy.detailsLabel)
+          .setPlaceholder(copy.detailsPh)
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true)
           .setMaxLength(1000);
 
         const steps = new TextInputBuilder()
           .setCustomId('steps_taken')
-          .setLabel('Steps you’ve already tried')
-          .setPlaceholder('List anything you’ve already done to fix the issue.')
+          .setLabel(copy.stepsLabel)
+          .setPlaceholder(copy.stepsPh)
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true)
           .setMaxLength(800);
 
         const notes = new TextInputBuilder()
           .setCustomId('extra_notes')
-          .setLabel('Additional notes (optional)')
-          .setPlaceholder('Any extra context or links you’d like to include.')
+          .setLabel(copy.notesLabel)
+          .setPlaceholder(copy.notesPh)
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
           .setMaxLength(200);
@@ -828,11 +945,11 @@ module.exports = {
         const ownerId = getTicketOwnerId(channel);
 
         const transferEmbed = new EmbedBuilder()
-          .setTitle('Ticket Transferred')
-          .setColor(0x2b2d31)
+          .setTitle('🔁 Ticket Transferred')
+          .setColor(DARK_COLOR)
           .setDescription(
             `This ticket has been transferred to the **${label}** by ${interaction.user}.\n` +
-              'Please wait for a response from the new handler.'
+            `Please wait for a response from the new handler.`
           )
           .setTimestamp();
 
@@ -905,7 +1022,6 @@ module.exports = {
 
         let ch;
         let voiceChannel = null;
-        const color = 0x2b2d31;
 
         if (type === 'voice') {
           const textName = `voice-ticket-${nameBase}`;
@@ -925,11 +1041,10 @@ module.exports = {
             reason: `Voice support channel for ${interaction.user.tag} (${interaction.user.id})`
           });
 
-          await ch.setTopic(
-            `OWNER:${interaction.user.id} | TYPE:${type} | VOICE:${voiceChannel.id}`
-          );
+          await ch.setTopic(`OWNER:${interaction.user.id} | TYPE:${type} | VOICE:${voiceChannel.id}`).catch(() => null);
         } else {
-          const channelName = `ticket-${nameBase}-${type}`;
+          const typeSlug = slugifyType(type);
+          const channelName = `ticket-${nameBase}-${typeSlug}`;
           ch = await interaction.guild.channels.create({
             name: channelName,
             type: ChannelType.GuildText,
@@ -938,59 +1053,26 @@ module.exports = {
             reason: `Ticket created by ${interaction.user.tag} (${interaction.user.id})`
           });
 
-          await ch.setTopic(`OWNER:${interaction.user.id} | TYPE:${type}`);
+          await ch.setTopic(`OWNER:${interaction.user.id} | TYPE:${type}`).catch(() => null);
         }
 
         registerTicketOpen(client, ch);
 
-        let description =
-          `A new support ticket has been opened.\n\n` +
-          `**Submitted by:** ${interaction.user} \`(${interaction.user.id})\`\n` +
-          `**Ticket Type:** \`${type}\`\n\n` +
-          `**Issue Details:**\n${issue_details}\n\n` +
-          `**Steps Tried:**\n${steps_taken}\n\n` +
-          `**Additional Notes:**\n${extra_notes}\n\n` +
-          `A staff member will review your issue shortly. Please avoid tagging staff members unless necessary.`;
-
-        if (type === 'voice' && voiceChannel) {
-          description =
-            `A new **voice support meeting** has been requested.\n\n` +
-            `**Submitted by:** ${interaction.user} \`(${interaction.user.id})\`\n` +
-            `**Ticket Type:** \`${type}\`\n\n` +
-            `**Issue Details:**\n${issue_details}\n\n` +
-            `**Steps Tried:**\n${steps_taken}\n\n` +
-            `**Additional Notes:**\n${extra_notes}\n\n` +
-            `**Voice Channel:** ${voiceChannel.toString()}\n\n` +
-            `Please join the voice channel when you are ready. You can use mic, camera and screen share.\n` +
-            `A staff member will join as soon as possible.`;
-        }
-
-        const openEmbed = new EmbedBuilder()
-          .setTitle('Magic UI Support Ticket')
-          .setColor(color)
-          .setDescription(description)
-          .setImage(
-            'https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif?ex=68fa1f29&is=68f8cda9&hm=06e75e6659eff21a4e1cd2f3d4073b241c9e5e661ea85fdda42b6f8592ce0164'
-          )
-          .setTimestamp();
+        const openEmbed = buildTicketOpenEmbed({
+          guild: interaction.guild,
+          user: interaction.user,
+          type,
+          issue_details,
+          steps_taken,
+          extra_notes,
+          voiceChannel
+        });
 
         const staffRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('ticket_claim')
-            .setLabel('✅ Claim Ticket')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('ticket_hold')
-            .setLabel('⏸️ Put On Hold')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('ticket_transfer')
-            .setLabel('🔁 Transfer Ticket')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('ticket_close')
-            .setLabel('🗑️ Close Ticket')
-            .setStyle(ButtonStyle.Danger)
+          new ButtonBuilder().setCustomId('ticket_claim').setLabel('✅ Claim Ticket').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('ticket_hold').setLabel('⏸️ Put On Hold').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('ticket_transfer').setLabel('🔁 Transfer Ticket').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('ticket_close').setLabel('🗑️ Close Ticket').setStyle(ButtonStyle.Danger)
         );
 
         await ch.send({
@@ -1003,12 +1085,12 @@ module.exports = {
           name: `staff-${nameBase}`,
           autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
           reason: 'Private staff-only thread'
-        });
+        }).catch(() => null);
 
-        await thread.members.add(client.user.id).catch(() => null);
-        await thread.send(
-          '🧩 This is a private staff-only thread for internal discussion regarding this ticket.'
-        );
+        if (thread) {
+          await thread.members.add(client.user.id).catch(() => null);
+          await thread.send('🧩 This is a private staff-only thread for internal discussion regarding this ticket.').catch(() => null);
+        }
 
         try {
           if (type === 'voice' && voiceChannel) {
@@ -1030,20 +1112,19 @@ module.exports = {
         const modlog = interaction.guild.channels.cache.get(MODLOG_ID);
         if (modlog) {
           const ml = new EmbedBuilder()
-            .setTitle('Ticket Created')
-            .setColor(color)
+            .setTitle('🎫 Ticket Created')
+            .setColor(DARK_COLOR)
             .setDescription(
               `**User:** ${interaction.user.tag} (${interaction.user.id})\n` +
-                `**Channel:** ${ch.toString()} (${ch.id})\n` +
-                `**Type:** ${type}\n` +
-                `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
+              `**Channel:** ${ch.toString()} (${ch.id})\n` +
+              `**Type:** ${type}\n` +
+              `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
             );
-          await modlog.send({ embeds: [ml] });
+          await modlog.send({ embeds: [ml] }).catch(() => null);
         }
 
         return interaction.editReply({
-          content:
-            ' <:check:1430525546608988203> Your support ticket has been opened successfully.'
+          content: '<:check:1430525546608988203> Your support ticket has been opened successfully.'
         });
       }
 
@@ -1067,32 +1148,19 @@ module.exports = {
         data.feedback = feedback;
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('ticket_transcript_yes')
-            .setLabel('Yes, send transcript')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('ticket_transcript_no')
-            .setLabel('No, just close')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setLabel('Buy your advisor a Ko-fi ☕')
-            .setStyle(ButtonStyle.Link)
-            .setURL(KOFI_URL)
+          new ButtonBuilder().setCustomId('ticket_transcript_yes').setLabel('Yes, send transcript').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('ticket_transcript_no').setLabel('No, just close').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setLabel('Buy your advisor a Ko-fi ☕').setStyle(ButtonStyle.Link).setURL(KOFI_URL)
         );
 
         return interaction.reply({
-          content:
-            'Thank you for your feedback. Would you like to receive a transcript of this conversation?',
+          content: 'Thank you for your feedback. Would you like to receive a transcript of this conversation?',
           components: [row],
           ephemeral: true
         });
       }
 
-      if (
-        interaction.isButton() &&
-        /^ticket_(claim|hold|close|transfer)$/.test(interaction.customId)
-      ) {
+      if (interaction.isButton() && /^ticket_(claim|hold|close|transfer)$/.test(interaction.customId)) {
         const channel = interaction.channel;
         if (!channel || channel.type !== ChannelType.GuildText) {
           return interaction.reply({ content: '⚠️ Invalid ticket channel.', ephemeral: true });
@@ -1108,28 +1176,16 @@ module.exports = {
 
           const embed = new EmbedBuilder()
             .setTitle('Transfer Ticket')
-            .setColor(0x2b2d31)
+            .setColor(DARK_COLOR)
             .setDescription('Select which team should take over this ticket.');
 
           const menu = new StringSelectMenuBuilder()
             .setCustomId('ticket_transfer_select')
             .setPlaceholder('Select a team to transfer to')
             .addOptions(
-              {
-                label: 'Customer Support Team',
-                value: 'support',
-                description: 'Transfer to Customer Support'
-              },
-              {
-                label: 'Management Team',
-                value: 'management',
-                description: 'Transfer to Management'
-              },
-              {
-                label: 'Development Team',
-                value: 'dev',
-                description: 'Transfer to Development'
-              }
+              { label: 'Customer Support Team', value: 'support', description: 'Transfer to Customer Support' },
+              { label: 'Management Team', value: 'management', description: 'Transfer to Management' },
+              { label: 'Development Team', value: 'dev', description: 'Transfer to Development' }
             );
 
           const row = new ActionRowBuilder().addComponents(menu);
@@ -1142,14 +1198,12 @@ module.exports = {
         }
 
         await interaction.deferReply({ ephemeral: true });
-        const color = 0x2b2d31;
+        const color = DARK_COLOR;
         const modlog = interaction.guild.channels.cache.get(MODLOG_ID);
 
         if (interaction.customId === 'ticket_claim') {
           if (!isStaffMember(interaction.member)) {
-            return interaction.editReply({
-              content: '⚠️ You are not allowed to claim tickets.'
-            });
+            return interaction.editReply({ content: '⚠️ You are not allowed to claim tickets.' });
           }
 
           const alreadyClaimedId = getTicketClaimedById(channel);
@@ -1164,17 +1218,12 @@ module.exports = {
             });
           }
 
-          await channel
-            .setName(`📥｜claimed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`)
-            .catch(() => null);
+          await channel.setName(`📥｜claimed-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
 
           const existingTopic = channel.topic || '';
           let newTopic;
           if (/CLAIMED_BY:\d{17,20}/.test(existingTopic)) {
-            newTopic = existingTopic.replace(
-              /CLAIMED_BY:\d{17,20}/,
-              `CLAIMED_BY:${interaction.user.id}`
-            );
+            newTopic = existingTopic.replace(/CLAIMED_BY:\d{17,20}/, `CLAIMED_BY:${interaction.user.id}`);
           } else if (existingTopic.length > 0) {
             newTopic = `${existingTopic} | CLAIMED_BY:${interaction.user.id}`;
           } else {
@@ -1186,9 +1235,10 @@ module.exports = {
             embeds: [
               new EmbedBuilder()
                 .setTitle('📥 Ticket Claimed')
-                .setColor(color)
+                .setColor(BRAND_COLOR)
                 .setDescription(
-                  `This ticket has been **claimed by ${interaction.user}**.\nYou will now receive customer support from the Magic UI team in this channel.`
+                  `This ticket has been **claimed by ${interaction.user}**.\n` +
+                  `You will now receive support from the MagicUI team in this channel.`
                 )
                 .setTimestamp()
             ]
@@ -1197,26 +1247,24 @@ module.exports = {
           await registerTicketClaim(client, channel);
 
           await interaction.editReply({
-            content: ` <:check:1430525546608988203> Ticket claimed by ${interaction.user}.`
+            content: `<:check:1430525546608988203> Ticket claimed by ${interaction.user}.`
           });
 
           const e = new EmbedBuilder()
             .setTitle('📥 Ticket Claimed')
             .setColor(color)
             .setDescription(
-              `**Channel:** ${channel}\n**Claimed by:** ${interaction.user.tag}\n**At:** <t:${Math.floor(
-                Date.now() / 1000
-              )}:F>`
+              `**Channel:** ${channel}\n` +
+              `**Claimed by:** ${interaction.user.tag}\n` +
+              `**At:** <t:${Math.floor(Date.now() / 1000)}:F>`
             );
 
-          if (modlog) await modlog.send({ embeds: [e] });
+          if (modlog) await modlog.send({ embeds: [e] }).catch(() => null);
           return;
         }
 
         if (interaction.customId === 'ticket_hold') {
-          await channel
-            .setName(`⏸️｜hold-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`)
-            .catch(() => null);
+          await channel.setName(`⏸️｜hold-${channel.name.replace(/^📥｜|⏸️｜|✅｜/g, '')}`).catch(() => null);
 
           await channel.send({
             embeds: [
@@ -1234,25 +1282,19 @@ module.exports = {
             .setTitle('⏸️ Ticket On Hold')
             .setColor(color)
             .setDescription(
-              `**Channel:** ${channel}\n**By:** ${interaction.user.tag}\n**At:** <t:${Math.floor(
-                Date.now() / 1000
-              )}:F>`
+              `**Channel:** ${channel}\n` +
+              `**By:** ${interaction.user.tag}\n` +
+              `**At:** <t:${Math.floor(Date.now() / 1000)}:F>`
             );
 
-          if (modlog) await modlog.send({ embeds: [e] });
+          if (modlog) await modlog.send({ embeds: [e] }).catch(() => null);
           return;
         }
 
         if (interaction.customId === 'ticket_close') {
           const confirmRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId('ticket_close_confirm')
-              .setLabel('Confirm Close')
-              .setStyle(ButtonStyle.Danger),
-            new ButtonBuilder()
-              .setCustomId('ticket_close_cancel')
-              .setLabel('Cancel')
-              .setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId('ticket_close_confirm').setLabel('Confirm Close').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('ticket_close_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary)
           );
           return interaction.editReply({
             content: 'Are you sure you want to close this ticket?',
@@ -1271,10 +1313,7 @@ module.exports = {
         }
 
         if (!channel || !guild) {
-          return interaction.editReply({
-            content: '⚠️ Channel not found.',
-            components: []
-          });
+          return interaction.editReply({ content: '⚠️ Channel not found.', components: [] });
         }
 
         const ownerId = getTicketOwnerId(channel);
@@ -1294,33 +1333,18 @@ module.exports = {
 
         const ratingEmbed = new EmbedBuilder()
           .setTitle('Rate Your Support Experience')
-          .setColor(0x2b2d31)
+          .setColor(DARK_COLOR)
           .setDescription(
-            'How would you rate your customer support experience with Magic UI?\n\n' +
-              'Please choose a rating from **1** (poor) to **5** (excellent).'
+            'How would you rate your support experience with MagicUI?\n\n' +
+            'Choose a rating from **1** (poor) to **5** (excellent).'
           );
 
         const ratingRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('ticket_rate_1')
-            .setLabel('1')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('ticket_rate_2')
-            .setLabel('2')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('ticket_rate_3')
-            .setLabel('3')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('ticket_rate_4')
-            .setLabel('4')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('ticket_rate_5')
-            .setLabel('5')
-            .setStyle(ButtonStyle.Success)
+          new ButtonBuilder().setCustomId('ticket_rate_1').setLabel('1').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('ticket_rate_2').setLabel('2').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('ticket_rate_3').setLabel('3').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('ticket_rate_4').setLabel('4').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('ticket_rate_5').setLabel('5').setStyle(ButtonStyle.Success)
         );
 
         await channel.send({
@@ -1330,8 +1354,7 @@ module.exports = {
         });
 
         return interaction.editReply({
-          content:
-            'A rating request has been sent to the user. The ticket will be closed after feedback is submitted.',
+          content: 'A rating request has been sent to the user. The ticket will be closed after feedback is submitted.',
           components: []
         });
       }
@@ -1345,10 +1368,7 @@ module.exports = {
 
         const ownerId = getTicketOwnerId(channel);
         if (!ownerId) {
-          return interaction.reply({
-            content: '⚠️ Ticket owner not found.',
-            ephemeral: true
-          });
+          return interaction.reply({ content: '⚠️ Ticket owner not found.', ephemeral: true });
         }
 
         if (interaction.user.id !== ownerId) {
@@ -1381,33 +1401,19 @@ module.exports = {
         }
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('ticket_transcript_yes')
-            .setLabel('Yes, send transcript')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('ticket_transcript_no')
-            .setLabel('No, just close')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setLabel('☕ Support on Ko-fi')
-            .setStyle(ButtonStyle.Link)
-            .setURL(KOFI_URL)
+          new ButtonBuilder().setCustomId('ticket_transcript_yes').setLabel('Yes, send transcript').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('ticket_transcript_no').setLabel('No, just close').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setLabel('☕ Support on Ko-fi').setStyle(ButtonStyle.Link).setURL(KOFI_URL)
         );
 
         return interaction.reply({
-          content:
-            'Thank you for rating **5/5**. Would you like to receive a transcript of this conversation?',
+          content: 'Thank you for rating **5/5**. Would you like to receive a transcript of this conversation?',
           components: [row],
           ephemeral: true
         });
       }
 
-      if (
-        interaction.isButton() &&
-        (interaction.customId === 'ticket_transcript_yes' ||
-          interaction.customId === 'ticket_transcript_no')
-      ) {
+      if (interaction.isButton() && (interaction.customId === 'ticket_transcript_yes' || interaction.customId === 'ticket_transcript_no')) {
         const channel = interaction.channel;
         const guild = interaction.guild;
         if (!channel || !guild) {
@@ -1416,10 +1422,7 @@ module.exports = {
 
         const ownerId = getTicketOwnerId(channel);
         if (!ownerId || interaction.user.id !== ownerId) {
-          return interaction.reply({
-            content: 'Only the ticket owner can choose this.',
-            ephemeral: true
-          });
+          return interaction.reply({ content: 'Only the ticket owner can choose this.', ephemeral: true });
         }
 
         await interaction.deferReply({ ephemeral: true });
@@ -1434,15 +1437,9 @@ module.exports = {
       console.error('Error in interactionCreate handler:', err);
       try {
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({
-            content: '⚠️ Something went wrong while handling this interaction.',
-            ephemeral: true
-          });
+          await interaction.reply({ content: '⚠️ Something went wrong while handling this interaction.', ephemeral: true });
         } else {
-          await interaction.followUp({
-            content: '⚠️ Something went wrong while handling this interaction.',
-            ephemeral: true
-          });
+          await interaction.followUp({ content: '⚠️ Something went wrong while handling this interaction.', ephemeral: true });
         }
       } catch {}
     }

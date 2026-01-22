@@ -1,27 +1,30 @@
-// commands/ticketpanel.js
 const {
   PermissionsBitField,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  StringSelectMenuBuilder
 } = require("discord.js");
 const { formatEtaText } = require("../utils/ticketStats");
 
 const PANEL_COOLDOWN_MS = 30000;
 
 const BRAND = {
-  color: 0xffffff,
+  color: 0x2b79ee,
   authorName: "MagicUI Support",
-  authorIcon:
-    "https://cdn.discordapp.com/icons/000000000000000000/000000000000000000.png?size=128",
-  footerText: "MagicUI Support",
+  footerText: "MagicUI Support"
 };
 
-function v2Embed({ title, description, image }) {
+function makeEmbed({ client, guild, title, description, image }) {
+  const icon =
+    guild?.iconURL?.({ dynamic: true, size: 128 }) ||
+    client?.user?.displayAvatarURL?.({ dynamic: true, size: 128 }) ||
+    undefined;
+
   const e = new EmbedBuilder()
     .setColor(BRAND.color)
-    .setAuthor({ name: BRAND.authorName, iconURL: BRAND.authorIcon })
+    .setAuthor({ name: BRAND.authorName, iconURL: icon })
     .setTitle(title)
     .setDescription(description)
     .setFooter({ text: BRAND.footerText })
@@ -41,54 +44,101 @@ module.exports = {
     if (!client.__panelCooldown) client.__panelCooldown = new Map();
     const last = client.__panelCooldown.get(message.channel.id) || 0;
     if (Date.now() - last < PANEL_COOLDOWN_MS) {
-      return message.reply(
-        "<:cross:1430525603701850165> Please wait before sending another panel."
-      );
+      return message.reply("<:cross:1430525603701850165> Please wait before sending another panel.");
     }
     client.__panelCooldown.set(message.channel.id, Date.now());
 
-    const e1 = v2Embed({
+    const e1 = makeEmbed({
+      client,
+      guild: message.guild,
       title: "Welcome to MagicUI Support",
       description:
-        "<:techouse211:1421840900258009129> Welcome to the **official Magic UI support**. We’re here to help with design, code, billing, access, and technical issues.\n\nClick **Contact Support** to submit your request. Our team will respond via DM when possible.",
+        "Welcome to the official **MagicUI** support.\n\n" +
+        "**Use the dropdown** to open a ticket.\n" +
+        "**Use Contact Support** for private, staff-reviewed requests (staff may reply via DM)."
     });
 
-    const e2 = v2Embed({
-      title: "Rules & When to Contact Support",
+    const e2 = makeEmbed({
+      client,
+      guild: message.guild,
+      title: "Rules & What This Is For",
       description:
-        "**Please Read Before Contacting Support**\n\nMisuse of the support system may result in warnings.\n\n" +
-        "**<:techouse210:1421840914653122631> Use this for:**\n" +
-        "* <:techouse212:1421842840899551332> Payment or billing issues\n" +
-        "* <:techouse213:1421844306511007784> Bug reports or broken components\n" +
-        "* <:techouse214:1421844303474462720> General support inquiries\n" +
-        "* <:techouse215:1421844300043387050> Rule violation reports\n" +
-        "* <:techouse216:1421844296537083994> Order or product issues\n\n" +
-        "**Do *not* contact support for:**\n" +
-        "> • Spam or off-topic questions\n" +
-        "> • Repeated requests without new information\n" +
-        "> • Feature suggestions (use <#1237846965342175394> instead)\n\n" +
-        "You must follow our server rules to use this system.",
+        "**Before you open anything:**\n" +
+        "- No spam, no duplicates, no random pings\n" +
+        "- Add screenshots/logs when possible\n" +
+        "- Keep the issue focused and clear\n\n" +
+        "**Bug reports:** use the **Bug Report (GitHub)** option in the dropdown.\n" +
+        "**Technical Support:** only if it’s a technical issue (install/build/config/deploy)."
     });
 
-    const etaEmbed = v2Embed({
-      title: "Estimated Response Time",
-      description: formatEtaText(client, message.guild),
+    const etaEmbed = makeEmbed({
+      client,
+      guild: message.guild,
+      title: "Estimated Claim Time",
+      description: formatEtaText(client, message.guild)
     });
 
-    const e3 = v2Embed({
-      title: "Contact Support",
+    const e3 = makeEmbed({
+      client,
+      guild: message.guild,
+      title: "Open a Ticket",
+      description:
+        "Choose an option from the dropdown:\n" +
+        "- **Technical Support** — install/build/config/deploy help\n" +
+        "- **Bug Report (GitHub)** — sends you the issues link (no ticket created)\n" +
+        "- **Billing & Payments** — invoices/charges/access\n" +
+        "- **Account & Access** — roles/auth/permissions\n" +
+        "- **Voice Support** — creates a voice channel + ticket"
+    });
+
+    const e4 = makeEmbed({
+      client,
+      guild: message.guild,
+      title: "Contact Support (Private Request)",
       description:
         "Press the button below and fill out the form:\n" +
         "• What issue you’re experiencing\n" +
         "• What you tried already\n" +
         "• Whether you’re on **Free** or **Pro**\n" +
-        "• Optional email (only if you want us to contact you outside Discord)\n\n" +
-        "After you submit, staff will review it in a staff-only queue and respond when possible.",
-      image:
-        "https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif",
+        "• Optional email (only if you want contact outside Discord)\n\n" +
+        "After you submit, staff will review it and reply when possible.",
+      image: "https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif"
     });
 
-    const row = new ActionRowBuilder().addComponents(
+    const selectRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("ticket_reason_select")
+        .setPlaceholder("Choose a ticket type…")
+        .addOptions(
+          {
+            label: "Technical Support",
+            value: "technical_support",
+            description: "Install/build/config/deploy help"
+          },
+          {
+            label: "Bug Report (GitHub)",
+            value: "bug_report",
+            description: "Opens GitHub issues link (no ticket created)"
+          },
+          {
+            label: "Billing & Payments",
+            value: "billing",
+            description: "Invoices, charges, refunds, access issues"
+          },
+          {
+            label: "Account & Access",
+            value: "account_access",
+            description: "Roles, auth, permissions, Pro access"
+          },
+          {
+            label: "Voice Support",
+            value: "voice",
+            description: "Creates a voice channel + ticket"
+          }
+        )
+    );
+
+    const buttonRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("support_contact")
         .setLabel("Contact Support")
@@ -97,16 +147,16 @@ module.exports = {
     );
 
     const panelMsg = await message.channel.send({
-      embeds: [e1, e2, etaEmbed, e3],
-      components: [row],
+      embeds: [e1, e2, etaEmbed, e3, e4],
+      components: [selectRow, buttonRow]
     });
 
     if (!client.ticketPanelInfo) client.ticketPanelInfo = {};
     client.ticketPanelInfo[message.guild.id] = {
       channelId: panelMsg.channel.id,
-      messageId: panelMsg.id,
+      messageId: panelMsg.id
     };
 
     return message.reply("<:check:1430525546608988203> Ticket panel posted.");
-  },
+  }
 };

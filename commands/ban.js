@@ -1,6 +1,5 @@
 const {
   ContainerBuilder,
-  TextDisplayBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -10,13 +9,12 @@ const {
 } = require("discord.js");
 const { addCase } = require("../utils/caseStore");
 
-const APPEAL_URL = "https://discord.com/channels/1151315619246002176/1405208521871724605";
 const RED = 0xed4245;
 
 function card({ title, body, buttonLabel, buttonUrl }) {
   const c = new ContainerBuilder().setAccentColor(RED);
 
-  c.addTextDisplayComponents((t) => t.setContent(`**${title}**`));
+  c.addTextDisplayComponents((t) => t.setContent(`**${String(title || "").trim()}**`));
   c.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
 
   const safeBody = String(body || "").trim();
@@ -31,6 +29,51 @@ function card({ title, body, buttonLabel, buttonUrl }) {
   }
 
   return c;
+}
+
+function escapeMd(input) {
+  return String(input ?? "").replace(/([\\`*_~|>])/g, "\\$1");
+}
+
+function banDmBody({ guildName, caseNum, reason, modTag, dateUnix }) {
+  const safeGuild = escapeMd(guildName || "this server");
+  const safeReason = escapeMd(reason || "No reason provided.");
+
+  return (
+    `You have been **banned** from **${safeGuild}**.\n\n` +
+    `> **Action:** Ban\n` +
+    `> **Case ID:** #${caseNum}\n` +
+    `> **Reason:** ${safeReason}\n` +
+    `> **Issued by:** ${escapeMd(modTag)}\n` +
+    `> **Date:** <t:${dateUnix}:F>\n\n` +
+    `### Why bans happen\n` +
+    `This server follows Discord Community Guidelines and Magic UI policies. A ban may occur for any of the following:\n\n` +
+    `**Conduct**\n` +
+    `- Hate speech, harassment, discrimination, threats, or targeted abuse\n` +
+    `- Trolling, baiting, toxic behavior, or starting/dragging drama\n` +
+    `- Spamming, flooding, mass mentions, repeated disruptions\n` +
+    `- Ignoring moderator instructions or arguing moderation decisions\n` +
+    `- Misusing channels or repeatedly going off-topic\n\n` +
+    `**Content standards**\n` +
+    `- Posting NSFW, offensive, violent, or unsafe content\n` +
+    `- Sharing misleading content, impersonation, or false claims\n` +
+    `- Failing to credit creators or misrepresenting AI-assisted work\n\n` +
+    `**Originality & licensing**\n` +
+    `- Plagiarism or copying designs/code/assets without permission\n` +
+    `- Violating software/content licenses or removing required attribution\n\n` +
+    `**Promotion & advertising**\n` +
+    `- Posting invite/referral/affiliate links\n` +
+    `- Unapproved paid promotions\n` +
+    `- Unsolicited advertising or private promotions (including DMs)\n\n` +
+    `**Privacy & safety**\n` +
+    `- Sharing personal/private/sensitive information\n` +
+    `- Phishing, scams, malware, or malicious/unsafe links\n` +
+    `- Attempts to compromise accounts, services, or security\n\n` +
+    `### Appeal status\n` +
+    `Appeals are **not available** for this ban.\n` +
+    `Do not attempt to bypass this action using alternate accounts or by contacting staff privately.\n\n` +
+    `Magic UI Moderation Team`
+  );
 }
 
 module.exports = {
@@ -63,29 +106,43 @@ module.exports = {
       });
     }
 
-    const reason = args.slice(1).join(" ") || "No reason provided.";
-    const caseNum = addCase(message.guild.id, target.id, {
-      type: "ban",
-      mod: message.author.id,
-      reason,
-    });
+    const reason = args.slice(1).join(" ").trim() || "No reason provided.";
+    const nowUnix = Math.floor(Date.now() / 1000);
 
-    const dmBody =
-      `**You received a punishment from our moderation team.**\n\n` +
-      `> **Punishment:** Ban\n` +
-      `> **Case ID:** #${caseNum}\n` +
-      `> **Reason:** ${reason}\n\n` +
-      `Appeal:\n${APPEAL_URL}\n` +
-      `Magic UI Moderation Team.`;
+    let caseNum;
+    try {
+      caseNum = addCase(message.guild.id, target.id, {
+        type: "ban",
+        mod: message.author.id,
+        reason,
+      });
+    } catch {
+      return message.reply({
+        components: [
+          card({
+            title: "Ban Failed",
+            body: "Could not create a case entry. Please try again.",
+          }),
+        ],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
+    }
+
+    const dmBody = banDmBody({
+      guildName: message.guild?.name,
+      caseNum,
+      reason,
+      modTag: message.author?.tag || "a moderator",
+      dateUnix: nowUnix,
+    });
 
     try {
       await target.send({
         components: [
           card({
-            title: "Punishment Notice",
+            title: "Ban Notice",
             body: dmBody,
-            buttonLabel: "Appeal Here",
-            buttonUrl: APPEAL_URL,
           }),
         ],
         flags: MessageFlags.IsComponentsV2,
@@ -100,7 +157,7 @@ module.exports = {
         components: [
           card({
             title: "Ban Failed",
-            body: "Failed to ban user. Possibly missing permissions.",
+            body: "Failed to ban user. I may be missing permissions, or the user has a higher role.",
           }),
         ],
         flags: MessageFlags.IsComponentsV2,
@@ -122,7 +179,7 @@ module.exports = {
         `**Moderator:** ${message.author.tag} (${message.author.id})\n` +
         `**Reason:** ${reason}\n` +
         `**Case ID:** #${caseNum}\n` +
-        `**Date:** <t:${Math.floor(Date.now() / 1000)}:F>`;
+        `**Date:** <t:${nowUnix}:F>`;
 
       await log.send({
         components: [

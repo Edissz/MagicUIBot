@@ -1,35 +1,50 @@
 const { PermissionsBitField, MessageFlags } = require("discord.js");
 const { buildTicketPanelComponents } = require("../utils/ticketStats");
 
-const SUPPORT_PANEL_CHANNEL_ID = "1405208521871724605";
+const PANEL_CHANNEL_ID = "1405208521871724605";
 const PANEL_COOLDOWN_MS = 30000;
 
 module.exports = {
   name: "ticketpanel",
   async execute(message, args, client) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-      return message.reply("<:cross:1430525603701850165> You lack permission.");
+      try { await message.reply("<:cross:1430525603701850165> You lack permission."); } catch { }
+      return;
     }
 
-    const ch = await message.guild.channels.fetch(SUPPORT_PANEL_CHANNEL_ID).catch(() => null);
-    if (!ch || !ch.isTextBased()) return message.reply("⚠️ Support panel channel not found.");
+    const guild = message.guild;
+    const ch = await guild.channels.fetch(PANEL_CHANNEL_ID).catch(() => null);
+    if (!ch || !ch.isTextBased()) {
+      try { await message.reply("⚠️ Support panel channel not found or not accessible."); } catch { }
+      return;
+    }
+
+    const me = await guild.members.fetchMe().catch(() => null);
+    if (me) {
+      const perms = ch.permissionsFor(me);
+      if (!perms || !perms.has(PermissionsBitField.Flags.ViewChannel) || !perms.has(PermissionsBitField.Flags.SendMessages)) {
+        try { await message.reply("⚠️ I don’t have permission to view/send messages in the panel channel."); } catch { }
+        return;
+      }
+    }
 
     if (!client.__panelCooldown) client.__panelCooldown = new Map();
-    const last = client.__panelCooldown.get(message.guild.id) || 0;
+    const last = client.__panelCooldown.get(guild.id) || 0;
     if (Date.now() - last < PANEL_COOLDOWN_MS) {
-      return message.reply("<:cross:1430525603701850165> Please wait before sending another panel.");
+      try { await message.reply("<:cross:1430525603701850165> Please wait before sending another panel."); } catch { }
+      return;
     }
-    client.__panelCooldown.set(message.guild.id, Date.now());
+    client.__panelCooldown.set(guild.id, Date.now());
 
     const panelMsg = await ch.send({
-      components: buildTicketPanelComponents(client, message.guild),
+      components: buildTicketPanelComponents(client, guild),
       flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
     });
 
     if (!client.ticketPanelInfo) client.ticketPanelInfo = {};
-    client.ticketPanelInfo[message.guild.id] = { channelId: panelMsg.channel.id, messageId: panelMsg.id };
+    client.ticketPanelInfo[guild.id] = { channelId: panelMsg.channel.id, messageId: panelMsg.id };
 
-    return message.reply("<:check:1430525546608988203> Ticket panel posted.");
+    try { await message.reply("<:check:1430525546608988203> Ticket panel posted."); } catch { }
   },
 };

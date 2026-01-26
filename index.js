@@ -26,16 +26,10 @@ for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))
 }
 
 const eventsPath = path.join(__dirname, "events");
-const files = fs.readdirSync(eventsPath).filter((f) => f.endsWith(".js")).sort((a, b) => a.localeCompare(b));
-const evMap = new Map();
-
-for (const file of files) {
+for (const file of fs.readdirSync(eventsPath).filter((f) => f.endsWith(".js"))) {
   const ev = require(path.join(eventsPath, file));
   if (!ev?.name || typeof ev.execute !== "function") continue;
-  evMap.set(ev.name, ev);
-}
 
-for (const ev of evMap.values()) {
   if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
   else client.on(ev.name, (...args) => ev.execute(...args, client));
 }

@@ -1,68 +1,80 @@
 const fs = require("fs");
+const path = require("path");
 const { PermissionsBitField } = require("discord.js");
+const { handleTicketMessage } = require("../utils/ticketStats");
+
+const STATS_PATH = path.join(__dirname, "..", "responseStats.json");
 
 let stats = { responses: 0, minutes: 0 };
-if (fs.existsSync("./responseStats.json")) {
+if (fs.existsSync(STATS_PATH)) {
   try {
-    stats = JSON.parse(fs.readFileSync("./responseStats.json", "utf8"));
-  } catch {}
+    stats = JSON.parse(fs.readFileSync(STATS_PATH, "utf8"));
+  } catch { }
 }
 
 module.exports = {
   name: "messageCreate",
   async execute(message, client) {
-    if (!message.guild) return;
-    if (message.author.bot) return;
+    if (message.author?.bot) return;
 
-    const prefix = client.prefix;
-    if (message.content.startsWith(prefix)) {
-      const args = message.content.slice(prefix.length).trim().split(/\s+/);
-      const cmdName = args.shift()?.toLowerCase();
-      if (!cmdName) return;
-
-      const command = client.commands.get(cmdName);
-      if (!command) return;
-
+    if (message.guild) {
       try {
-        await command.execute(message, args, client);
-      } catch (err) {
-        console.error(err);
-        await message.reply("⚠️ Command error.");
+        await handleTicketMessage(message, client);
+      } catch { }
+
+      const prefix = client.prefix || "!";
+      if (message.content?.startsWith(prefix)) {
+        const args = message.content.slice(prefix.length).trim().split(/\s+/);
+        const commandName = args.shift()?.toLowerCase();
+        if (!commandName) return;
+
+        const command = client.commands.get(commandName);
+        if (!command) return;
+
+        try {
+          await command.execute(message, args, client);
+          console.log(`✅ Command executed: ${commandName}`);
+        } catch (err) {
+          console.error(`❌ Error running ${commandName}:`, err);
+          try {
+            await message.reply("⚠️ Error executing this command.");
+          } catch { }
+        }
+        return;
+      }
+
+      if (!message.member) return;
+      if (!message.channel?.topic) return;
+      if (!message.channel.topic.includes("OWNER:")) return;
+
+      if (!client.__wait) client.__wait = {};
+      const cid = message.channel.id;
+
+      const isStaff =
+        message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+        message.member.roles.cache.some((r) => ["Moderator", "Administrator", "Manager"].includes(r.name));
+
+      if (!isStaff) {
+        client.__wait[cid] = Date.now();
+        return;
+      }
+
+      if (client.__wait[cid]) {
+        const diffMs = Date.now() - client.__wait[cid];
+        const mins = Math.max(1, Math.round(diffMs / 60000));
+
+        stats.responses += 1;
+        stats.minutes += mins;
+
+        try {
+          fs.writeFileSync(STATS_PATH, JSON.stringify(stats));
+        } catch { }
+
+        delete client.__wait[cid];
       }
       return;
     }
 
-    if (!message.member) return;
-    if (!message.channel.topic) return;
-    if (!message.channel.topic.includes("OWNER:")) return;
-
-    if (!client.__wait) client.__wait = {};
-    const cid = message.channel.id;
-
-    const isStaff =
-      message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-      message.member.roles.cache.some(r =>
-        ["Moderator", "Administrator", "Manager"].includes(r.name)
-      );
-
-    if (!isStaff) {
-      client.__wait[cid] = Date.now();
-      return;
-    }
-
-    if (client.__wait[cid]) {
-      const now = Date.now();
-      const diffMs = now - client.__wait[cid];
-      const mins = Math.max(1, Math.round(diffMs / 60000));
-
-      stats.responses += 1;
-      stats.minutes += mins;
-
-      try {
-        fs.writeFileSync("./responseStats.json", JSON.stringify(stats));
-      } catch {}
-
-      delete client.__wait[cid];
-    }
-  }
+    return;
+  },
 };

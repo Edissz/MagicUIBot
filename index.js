@@ -10,9 +10,9 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.DirectMessages
+    GatewayIntentBits.DirectMessages,
   ],
-  partials: [Partials.Channel, Partials.Message]
+  partials: [Partials.Channel, Partials.Message],
 });
 
 client.commands = new Collection();
@@ -20,17 +20,18 @@ client.prefix = "!";
 client.modlogChannelId = "1355260778965373000";
 
 const commandsPath = path.join(__dirname, "commands");
-for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"))) {
+for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))) {
   const cmd = require(path.join(commandsPath, file));
-  if (cmd?.name) client.commands.set(cmd.name, cmd);
+  if (cmd?.name && typeof cmd.execute === "function") client.commands.set(cmd.name.toLowerCase(), cmd);
 }
 
 const eventsPath = path.join(__dirname, "events");
-for (const file of fs.readdirSync(eventsPath).filter(f => f.endsWith(".js"))) {
+for (const file of fs.readdirSync(eventsPath).filter((f) => f.endsWith(".js"))) {
   const ev = require(path.join(eventsPath, file));
   if (!ev?.name || typeof ev.execute !== "function") continue;
-  client.removeAllListeners(ev.name);
-  client.on(ev.name, (...args) => ev.execute(...args, client));
+
+  if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
+  else client.on(ev.name, (...args) => ev.execute(...args, client));
 }
 
 const app = express();

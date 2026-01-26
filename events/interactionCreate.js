@@ -25,36 +25,11 @@ const ROLE_MANAGEMENT = "1441080027113586841";
 const ROLE_DEV = "1441079871911493693";
 
 const REASONS = [
-  {
-    label: "Payment / Billing",
-    value: "billing",
-    desc: "Charges, invoices, upgrades, access",
-    emoji: { id: "1465426488269607168", name: "invoice02StrokeRounded" },
-  },
-  {
-    label: "Bug / Technical Support",
-    value: "bug",
-    desc: "Not working, errors, broken UI",
-    emoji: { id: "1465426469886103646", name: "documentcodeStrokeRounded" },
-  },
-  {
-    label: "General Support",
-    value: "general",
-    desc: "How-to, setup, guidance",
-    emoji: { id: "1465426383072399360", name: "chatquestionStrokeRounded" },
-  },
-  {
-    label: "Report Rule Violation",
-    value: "report",
-    desc: "Report rule-breaking",
-    emoji: { id: "1465426405918638090", name: "flag01StrokeRounded" },
-  },
-  {
-    label: "Product / Security Issue",
-    value: "order",
-    desc: "Orders, product, entitlement",
-    emoji: { id: "1465426351896006726", name: "websecurityStrokeRounded" },
-  },
+  { label: "Payment Issue", value: "billing", desc: "Charges, invoices, upgrades, access", emoji: { id: "1465426488269607168", name: "invoice02StrokeRounded" } },
+  { label: "Tech Support", value: "bug", desc: "Broken components, errors, setup problems", emoji: { id: "1465426469886103646", name: "documentcodeStrokeRounded" } },
+  { label: "General Support", value: "general", desc: "Questions, guidance, help", emoji: { id: "1465426383072399360", name: "chatquestionStrokeRounded" } },
+  { label: "Report Rule", value: "report", desc: "Report abuse or rule violations", emoji: { id: "1465426405918638090", name: "flag01StrokeRounded" } },
+  { label: "Product Issue", value: "order", desc: "Entitlement, product/access issues", emoji: { id: "1465426351896006726", name: "websecurityStrokeRounded" } },
 ];
 
 function isStaff(member) {
@@ -93,13 +68,25 @@ function v2Card(title, body) {
   const c = new ContainerBuilder().setAccentColor(BRAND_BLUE);
   c.addTextDisplayComponents((t) => t.setContent(`**${title}**`));
   c.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  c.addTextDisplayComponents((t) => t.setContent(String(body || " ").trim() || " "));
+  c.addTextDisplayComponents((t) => t.setContent(String(body || "\u200B").trim() || "\u200B"));
   return c;
+}
+
+function ensureWizardStore(client) {
+  if (!client.__ticketWizard) client.__ticketWizard = new Map();
+  return client.__ticketWizard;
+}
+
+async function logEmbed(guild, embed, file) {
+  const ch = guild.channels.cache.get(LOG_ID) || (await guild.channels.fetch(LOG_ID).catch(() => null));
+  if (!ch || !ch.isTextBased()) return;
+  const payload = file ? { embeds: [embed], files: [file] } : { embeds: [embed] };
+  await ch.send(payload).catch(() => null);
 }
 
 function ticketControlsContainer() {
   const c = new ContainerBuilder().setAccentColor(BRAND_BLUE);
-  c.addTextDisplayComponents((t) => t.setContent(" "));
+  c.addTextDisplayComponents((t) => t.setContent("\u200B"));
   c.addActionRowComponents((row) =>
     row.setComponents(
       new ButtonBuilder().setCustomId("ticket_claim").setLabel("Claim").setStyle(ButtonStyle.Primary),
@@ -111,121 +98,36 @@ function ticketControlsContainer() {
   return c;
 }
 
-function ensureWizardStore(client) {
-  if (!client.__ticketWizard) client.__ticketWizard = new Map();
-  return client.__ticketWizard;
-}
-
-function ensureFeedbackStore(client) {
-  if (!client.__ticketFeedback) client.__ticketFeedback = {};
-  return client.__ticketFeedback;
-}
-
-async function logEmbed(guild, embed, file) {
-  const ch = guild.channels.cache.get(LOG_ID) || (await guild.channels.fetch(LOG_ID).catch(() => null));
-  if (!ch || !ch.isTextBased()) return;
-  const payload = file ? { embeds: [embed], files: [file] } : { embeds: [embed] };
-  await ch.send(payload).catch(() => null);
-}
-
-function wizardPayload(selected) {
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId("ticket_wizard_reason")
-    .setPlaceholder("Select a reason")
-    .addOptions(
-      REASONS.map((r) => ({
-        label: r.label,
-        value: r.value,
-        description: r.desc,
-        emoji: r.emoji,
-      }))
-    );
-
-  const btn = new ButtonBuilder()
-    .setCustomId("ticket_wizard_continue")
-    .setLabel("Continue")
-    .setStyle(ButtonStyle.Primary)
-    .setDisabled(!selected);
-
-  return {
-    components: [
-      v2Card("Contact Support", "Pick a reason below, then press **Continue**. You’ll fill a short form after this."),
-      new ActionRowBuilder().addComponents(menu),
-      new ActionRowBuilder().addComponents(btn),
-    ],
-    flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
-    allowedMentions: { parse: [] },
-  };
-}
-
-async function finalizeClose(channel, client, opts) {
-  const guild = channel.guild;
-  const ownerId = getOwnerId(channel);
-  const claimedBy = getClaimedBy(channel);
-
-  const transcript = await saveTranscript(channel).catch(() => "");
-  const file = transcript ? transcriptAttachment(channel.id, transcript) : null;
-
-  const embed = new EmbedBuilder()
-    .setTitle("Ticket Closed")
-    .setColor(BRAND_BLUE)
-    .setDescription(
-      `**Channel:** #${channel.name} (${channel.id})\n` +
-      `**Owner:** ${ownerId ? `<@${ownerId}> (${ownerId})` : "N/A"}\n` +
-      `**Claimed By:** ${claimedBy ? `<@${claimedBy}> (${claimedBy})` : "Unclaimed"}\n` +
-      `**Closed By:** ${opts.closedByTag} (${opts.closedById})\n` +
-      `**Rating:** ${opts.rating || "N/A"}\n` +
-      `**Wants Transcript:** ${opts.wantsTranscript ? "Yes" : "No"}\n` +
-      `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
-    )
-    .setTimestamp();
-
-  await logEmbed(guild, embed, file);
-
-  if (opts.wantsTranscript && ownerId && file) {
-    const user = await client.users.fetch(ownerId).catch(() => null);
-    if (user) await user.send({ content: "Here is your MagicUI ticket transcript:", files: [file] }).catch(() => null);
-  }
-
-  await channel.send({
-    components: [v2Card("Ticket Closing", "Transcript saved. This channel will be deleted in a few seconds.")],
-    flags: MessageFlags.IsComponentsV2,
-  }).catch(() => null);
-
-  setTimeout(async () => {
-    await channel.delete("Ticket closed").catch(() => null);
-  }, 6000);
-}
-
 module.exports = {
   name: "interactionCreate",
   async execute(interaction, client) {
     try {
       if (interaction.isButton() && interaction.customId === "ticket_start") {
-        const store = ensureWizardStore(client);
-        store.set(interaction.user.id, { reason: null });
-        return interaction.reply(wizardPayload(null));
+        const menu = new StringSelectMenuBuilder()
+          .setCustomId("ticket_reason_select")
+          .setPlaceholder("Select a reason")
+          .addOptions(REASONS.map((r) => ({ label: r.label, value: r.value, description: r.desc, emoji: r.emoji })));
+
+        const container = new ContainerBuilder().setAccentColor(BRAND_BLUE);
+        container.addTextDisplayComponents((t) => t.setContent("**Contact Support**"));
+        container.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+        container.addTextDisplayComponents((t) => t.setContent("Choose a reason below. Next, you’ll fill out the support form."));
+        container.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+        container.addActionRowComponents((row) => row.setComponents(menu));
+
+        return interaction.reply({
+          components: [container],
+          flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
+          allowedMentions: { parse: [] },
+        });
       }
 
-      if (interaction.isStringSelectMenu() && interaction.customId === "ticket_wizard_reason") {
+      if (interaction.isStringSelectMenu() && interaction.customId === "ticket_reason_select") {
+        const reason = interaction.values[0];
         const store = ensureWizardStore(client);
-        const state = store.get(interaction.user.id) || { reason: null };
-        state.reason = interaction.values[0];
-        store.set(interaction.user.id, state);
-        return interaction.update(wizardPayload(state.reason));
-      }
+        store.set(interaction.user.id, reason);
 
-      if (interaction.isButton() && interaction.customId === "ticket_wizard_continue") {
-        const store = ensureWizardStore(client);
-        const state = store.get(interaction.user.id);
-        if (!state?.reason) {
-          return interaction.reply({
-            components: [v2Card("Missing Reason", "Select a reason first.")],
-            flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
-          });
-        }
-
-        const modal = new ModalBuilder().setCustomId("ticket_modal_create").setTitle("Submit Ticket");
+        const modal = new ModalBuilder().setCustomId(`ticket_modal_${reason}`).setTitle("Submit Ticket");
 
         const issue = new TextInputBuilder().setCustomId("t_issue").setLabel("Describe your issue").setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1000);
         const tried = new TextInputBuilder().setCustomId("t_tried").setLabel("Steps you tried").setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(800);
@@ -242,18 +144,22 @@ module.exports = {
         return interaction.showModal(modal);
       }
 
-      if (interaction.isModalSubmit() && interaction.customId === "ticket_modal_create") {
-        const store = ensureWizardStore(client);
-        const state = store.get(interaction.user.id);
-        const reason = state?.reason || "general";
+      if (interaction.isModalSubmit() && interaction.customId.startsWith("ticket_modal_")) {
+        const guild = interaction.guild;
+        if (!guild) return;
+
+        const reason = interaction.customId.replace("ticket_modal_", "");
+        const reasonLabel = REASONS.find((r) => r.value === reason)?.label || reason;
 
         await interaction.reply({
           components: [v2Card("Creating Ticket", "Please wait…")],
           flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
         });
 
-        const guild = interaction.guild;
-        if (!guild) return;
+        const issue = interaction.fields.getTextInputValue("t_issue");
+        const tried = interaction.fields.getTextInputValue("t_tried");
+        const license = interaction.fields.getTextInputValue("t_license");
+        const email = (interaction.fields.getTextInputValue("t_email") || "").trim();
 
         const parent = guild.channels.cache.get(CATEGORY_ID) || (await guild.channels.fetch(CATEGORY_ID).catch(() => null));
         if (!parent) {
@@ -262,11 +168,6 @@ module.exports = {
             flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
           });
         }
-
-        const issue = interaction.fields.getTextInputValue("t_issue");
-        const tried = interaction.fields.getTextInputValue("t_tried");
-        const license = interaction.fields.getTextInputValue("t_license");
-        const email = (interaction.fields.getTextInputValue("t_email") || "").trim();
 
         const base = safeName(interaction.user.username);
         const chName = `ticket-${base}-${reason}`.slice(0, 95);
@@ -298,8 +199,6 @@ module.exports = {
 
         await channel.setTopic(`OWNER:${interaction.user.id} | TYPE:${reason}`).catch(() => null);
         registerTicketOpen(client, channel);
-
-        const reasonLabel = REASONS.find((r) => r.value === reason)?.label || reason;
 
         const open = new ContainerBuilder().setAccentColor(BRAND_BLUE);
         open.addTextDisplayComponents((t) => t.setContent("**MagicUI Support Ticket**"));
@@ -341,8 +240,6 @@ module.exports = {
           .setTimestamp();
 
         await logEmbed(guild, log);
-
-        store.delete(interaction.user.id);
 
         return interaction.editReply({
           components: [v2Card("Ticket Created", `Created ${channel.toString()} successfully.`)],

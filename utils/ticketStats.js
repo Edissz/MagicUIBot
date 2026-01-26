@@ -30,17 +30,14 @@ function getEstimatedMinutes(client, guild) {
 
 function formatEtaText(client, guild) {
   const minutes = getEstimatedMinutes(client, guild);
-
   if (!minutes) {
     return (
       "<a:48084loadingcircle:1439975825616408656> **Estimated claim time:** Not available yet.\n\n" +
       "We haven’t collected enough data. When staff is online, claims are usually quick."
     );
   }
-
   const rounded = Math.max(1, Math.round(minutes));
   const unit = rounded === 1 ? "minute" : "minutes";
-
   return (
     `<a:48084loadingcircle:1439975825616408656> **Estimated claim time:** ~${rounded} ${unit}\n\n` +
     "This updates automatically based on recent claims."
@@ -51,56 +48,57 @@ function card(title, body) {
   const c = new ContainerBuilder().setAccentColor(BRAND_BLUE);
   c.addTextDisplayComponents((t) => t.setContent(`**${title}**`));
   c.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  const safe = String(body || " ").trim();
-  c.addTextDisplayComponents((t) => t.setContent(safe.length ? safe : " "));
+  const safe = String(body || "\u200B");
+  c.addTextDisplayComponents((t) => t.setContent(safe.length ? safe : "\u200B"));
   return c;
 }
 
 function buildTicketPanelComponents(client, guild) {
   const c1 = card(
     "Welcome to MagicUI Support",
-    "<:techouse211:1421840900258009129> Welcome to the **official Magic UI support**.\nWe help with access, billing, bugs, setup, and general questions.\n\nClick **Contact Support** to start your request."
+    "<:techouse211:1421840900258009129> Welcome to the **official Magic UI support**.\nWe help with access, billing, bugs, setup, and general questions.\n\nClick **Contact Support** to start."
   );
 
   const c2 = card(
-    "Guidelines - When to Contact Support",
+    "Rules & When to Contact Support",
     "**Use this for:**\n" +
-    "- Payment or billing issues\n" +
-    "- Bug reports / broken components\n" +
-    "- General support\n" +
-    "- Rule violation reports\n" +
-    "- Order or product issues\n\n" +
+    "• Payment or billing issues\n" +
+    "• Bug reports / broken components\n" +
+    "• General support\n" +
+    "• Rule violation reports\n" +
+    "• Product / entitlement issues\n\n" +
     "**Do not use this for:**\n" +
-    "- Spam / off-topic\n" +
-    "- Repeated requests without new info\n" +
-    "- Suggestions (use the suggestions channel)"
+    "• Spam / off-topic\n" +
+    "• Repeated requests without new info\n" +
+    "• Suggestions"
   );
 
   const c3 = card("Estimated Response Time", formatEtaText(client, guild));
 
-  const c4 = card(
-    "Contact Support",
-    "You’ll pick a reason, then fill a short form:\n" +
-    "- Describe your issue\n" +
-    "- Steps you tried\n" +
-    "- License type (Free / Pro)\n" +
-    "- Optional email\n\n" +
-    "After you submit, a ticket channel is created for you."
+  const c4 = new ContainerBuilder().setAccentColor(BRAND_BLUE);
+  c4.addTextDisplayComponents((t) => t.setContent("**Contact Support**"));
+  c4.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  c4.addTextDisplayComponents((t) =>
+    t.setContent(
+      "Click **Contact Support** and choose a reason.\nThen fill the form:\n" +
+      "• Describe your issue\n" +
+      "• Steps you tried\n" +
+      "• License type (Free/Pro)\n" +
+      "• Optional email\n\n" +
+      "A ticket channel will be created automatically."
+    )
   );
-
-  const c5 = new ContainerBuilder().setAccentColor(BRAND_BLUE);
-  c5.addTextDisplayComponents((t) => t.setContent(" "));
-  c5.addActionRowComponents((row) =>
+  c4.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  c4.addActionRowComponents((row) =>
     row.setComponents(
       new ButtonBuilder()
         .setCustomId("ticket_start")
         .setLabel("Contact Support")
         .setStyle(ButtonStyle.Primary)
-        .setEmoji({ id: "1463540942870155327", name: "sent02StrokeRounded" })
     )
   );
 
-  return [c1, c2, c3, c4, c5];
+  return [c1, c2, c3, c4];
 }
 
 async function updateEtaPanel(client, guild) {

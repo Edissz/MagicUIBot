@@ -22,13 +22,18 @@ client.modlogChannelId = "1355260778965373000";
 const commandsPath = path.join(__dirname, "commands");
 for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))) {
   const cmd = require(path.join(commandsPath, file));
-  if (cmd?.name && typeof cmd.execute === "function") client.commands.set(cmd.name.toLowerCase(), cmd);
+  if (cmd?.name && typeof cmd.execute === "function") client.commands.set(String(cmd.name).toLowerCase(), cmd);
 }
 
 const eventsPath = path.join(__dirname, "events");
+const registeredEvents = new Set();
+
 for (const file of fs.readdirSync(eventsPath).filter((f) => f.endsWith(".js"))) {
   const ev = require(path.join(eventsPath, file));
   if (!ev?.name || typeof ev.execute !== "function") continue;
+
+  if (registeredEvents.has(ev.name)) continue;
+  registeredEvents.add(ev.name);
 
   if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
   else client.on(ev.name, (...args) => ev.execute(...args, client));
@@ -40,7 +45,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT);
 
 client.once("ready", () => {
-  console.log(`READY ${client.user.tag}`);
+  console.log(`READY ${client.user.tag} | PID ${process.pid}`);
 });
 
 client.login(process.env.TOKEN);

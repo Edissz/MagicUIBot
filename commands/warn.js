@@ -79,6 +79,13 @@ module.exports = {
       allowedMentions: { parse: [] },
     });
 
+    const whyWarned =
+      `You may have been warned for things like:\n` +
+      `• Harassment, insults, or targeted negativity\n` +
+      `• Spamming, flooding, or disruptive messages\n` +
+      `• Posting prohibited content or suspicious links\n` +
+      `• Ignoring staff instructions or community rules\n\n` +
+      `If this was a misunderstanding, no stress. Please take a moment to review the rules and adjust going forward.`;
 
     const dmBody =
       `Hi there, just a quick heads-up from the Magic UI moderation team.\n\n` +

@@ -30,17 +30,27 @@ function getEstimatedMinutes(client, guild) {
 
 function formatEtaText(client, guild) {
   const minutes = getEstimatedMinutes(client, guild);
+
   if (!minutes) {
     return (
       "<a:48084loadingcircle:1439975825616408656> **Estimated claim time:** Not available yet.\n\n" +
-      "We haven’t collected enough data. When staff is online, claims are usually quick."
+      "We haven’t collected enough recent data to calculate this. When staff is online, most tickets are typically claimed within a few minutes."
     );
   }
+
   const rounded = Math.max(1, Math.round(minutes));
   const unit = rounded === 1 ? "minute" : "minutes";
+
+  if (rounded <= 2) {
+    return (
+      "<a:48084loadingcircle:1439975825616408656> **Estimated claim time:** Under 2 minutes.\n\n" +
+      "Support is currently moving quickly."
+    );
+  }
+
   return (
-    `<a:48084loadingcircle:1439975825616408656> **Estimated claim time:** ~${rounded} ${unit}\n\n` +
-    "This updates automatically based on recent claims."
+    `<a:48084loadingcircle:1439975825616408656> **Estimated claim time:** ~${rounded} ${unit}.\n\n` +
+    "This estimate updates automatically based on recent ticket claim times."
   );
 }
 
@@ -55,22 +65,25 @@ function card(title, body) {
 
 function buildTicketPanelComponents(client, guild) {
   const c1 = card(
-    "Welcome to MagicUI Support",
-    "<:techouse211:1421840900258009129> Welcome to the **official Magic UI support**.\nWe help with access, billing, bugs, setup, and general questions.\n\nClick **Contact Support** to start."
+    "MagicUI Support",
+    "<:techouse211:1421840900258009129> Welcome to the **official Magic UI support**.\n\n" +
+    "Use this system for help with access, billing, technical issues, and general questions.\n" +
+    "To begin, click **Contact Support** and follow the prompts."
   );
 
   const c2 = card(
-    "Rules & When to Contact Support",
-    "**Use this for:**\n" +
+    "Guidelines",
+    "**Appropriate reasons to open a ticket:**\n" +
     "• Payment or billing issues\n" +
-    "• Bug reports / broken components\n" +
-    "• General support\n" +
+    "• Bug reports or broken components\n" +
+    "• General support inquiries\n" +
     "• Rule violation reports\n" +
     "• Product / entitlement issues\n\n" +
-    "**Do not use this for:**\n" +
-    "• Spam / off-topic\n" +
-    "• Repeated requests without new info\n" +
-    "• Suggestions"
+    "**Please avoid opening tickets for:**\n" +
+    "• Spam or off-topic messages\n" +
+    "• Repeated requests without new information\n" +
+    "• Feature suggestions (use the appropriate suggestion channel)\n\n" +
+    "Misuse of the support system may result in moderation action."
   );
 
   const c3 = card("Estimated Response Time", formatEtaText(client, guild));
@@ -80,21 +93,19 @@ function buildTicketPanelComponents(client, guild) {
   c4.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   c4.addTextDisplayComponents((t) =>
     t.setContent(
-      "Click **Contact Support** and choose a reason.\nThen fill the form:\n" +
-      "• Describe your issue\n" +
-      "• Steps you tried\n" +
-      "• License type (Free/Pro)\n" +
-      "• Optional email\n\n" +
-      "A ticket channel will be created automatically."
+      "When you click **Contact Support**, you will:\n" +
+      "• Select a ticket reason\n" +
+      "• Provide a clear description of the issue\n" +
+      "• Share steps you have already tried\n" +
+      "• Confirm your license type (Free/Pro)\n" +
+      "• Optionally provide an email address\n\n" +
+      "A private ticket channel will be created automatically."
     )
   );
   c4.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   c4.addActionRowComponents((row) =>
     row.setComponents(
-      new ButtonBuilder()
-        .setCustomId("ticket_start")
-        .setLabel("Contact Support")
-        .setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId("ticket_start").setLabel("Contact Support").setStyle(ButtonStyle.Primary)
     )
   );
 

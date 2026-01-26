@@ -4,9 +4,6 @@ const { Client, Collection, GatewayIntentBits, Partials } = require("discord.js"
 const fs = require("fs");
 const path = require("path");
 
-process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
-process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -18,11 +15,14 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-client.on("error", (e) => console.error("client error:", e));
-
 client.commands = new Collection();
 client.prefix = "!";
-client.modlogChannelId = "1355260778965373000";
+client.modlogChannelId = "1441524770083573770";
+
+process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
+process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
+client.on("error", (e) => console.error("client error:", e));
+client.on("shardError", (e) => console.error("shardError:", e));
 
 const commandsPath = path.join(__dirname, "commands");
 for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))) {
@@ -31,10 +31,16 @@ for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))
 }
 
 const eventsPath = path.join(__dirname, "events");
-for (const file of fs.readdirSync(eventsPath).filter((f) => f.endsWith(".js"))) {
+const files = fs.readdirSync(eventsPath).filter((f) => f.endsWith(".js")).sort((a, b) => a.localeCompare(b));
+const evMap = new Map();
+
+for (const file of files) {
   const ev = require(path.join(eventsPath, file));
   if (!ev?.name || typeof ev.execute !== "function") continue;
+  evMap.set(ev.name, ev);
+}
 
+for (const ev of evMap.values()) {
   if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
   else client.on(ev.name, (...args) => ev.execute(...args, client));
 }

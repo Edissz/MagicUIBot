@@ -4,25 +4,20 @@ module.exports = {
     if (!message.guild || message.author.bot) return;
 
     const prefix = client.prefix || "!";
-    const content = message.content || "";
-    if (!content.startsWith(prefix)) return;
+    if (!message.content.startsWith(prefix)) return;
 
-    const args = content.slice(prefix.length).trim().split(/\s+/);
-    let commandName = args.shift()?.toLowerCase();
+    const args = message.content.slice(prefix.length).trim().split(/\s+/);
+    const commandName = args.shift()?.toLowerCase();
     if (!commandName) return;
-
-    if (commandName === "tickewtpanel") commandName = "ticketpanel";
 
     const command = client.commands.get(commandName);
     if (!command) return;
 
-    console.log(`CMD: ${commandName} by ${message.author.tag} in #${message.channel.name}`);
-
     try {
       await command.execute(message, args, client);
-      console.log(`✅ OK: ${commandName}`);
+      console.log(`✅ Command executed: ${commandName}`);
     } catch (err) {
-      console.error(`❌ FAIL ${commandName}:`, err);
+      console.error(`❌ Error running ${commandName}:`, err);
       try { await message.reply("⚠️ Error executing this command."); } catch { }
     }
   },

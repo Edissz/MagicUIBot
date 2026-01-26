@@ -10,9 +10,10 @@ const {
 const { addCase, getUser } = require("../utils/caseStore");
 
 const APPEAL_URL = "https://discord.com/channels/1151315619246002176/1405208521871724605";
+const YELLOW = 0xF1C40F;
 
 function card({ title, body, withAppeal }) {
-  const c = new ContainerBuilder();
+  const c = new ContainerBuilder().setAccentColor(YELLOW);
 
   c.addTextDisplayComponents((t) => t.setContent(`**${title}**`));
   c.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
@@ -78,13 +79,6 @@ module.exports = {
       allowedMentions: { parse: [] },
     });
 
-    const whyWarned =
-      `You may have been warned for things like:\n` +
-      `• Harassment, insults, or targeted negativity\n` +
-      `• Spamming, flooding, or disruptive messages\n` +
-      `• Posting prohibited content or suspicious links\n` +
-      `• Ignoring staff instructions or community rules\n\n` +
-      `If this was a misunderstanding, no stress. Please take a moment to review the rules and adjust going forward.`;
 
     const dmBody =
       `Hi there, just a quick heads-up from the Magic UI moderation team.\n\n` +

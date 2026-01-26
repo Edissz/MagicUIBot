@@ -47,6 +47,10 @@ function safeName(s) {
     .slice(0, 18) || "ticket";
 }
 
+function baseName(name) {
+  return String(name || "").replace(/^📥｜|^⏸️｜|^✅｜/g, "").replace(/^claimed-/, "").replace(/^hold-/, "").replace(/^closed-/, "");
+}
+
 function getOwnerId(channel) {
   const m = (channel.topic || "").match(/OWNER:(\d{17,20})/);
   return m ? m[1] : null;
@@ -58,17 +62,37 @@ function getClaimedBy(channel) {
 }
 
 function setClaimedByTopic(topic, userId) {
-  const t = topic || "";
+  const t = String(topic || "");
   if (/CLAIMED_BY:\d{17,20}/.test(t)) return t.replace(/CLAIMED_BY:\d{17,20}/, `CLAIMED_BY:${userId}`);
-  if (!t.trim()) return `CLAIMED_BY:${userId}`;
-  return `${t} | CLAIMED_BY:${userId}`;
+  return t.trim().length ? `${t} | CLAIMED_BY:${userId}` : `CLAIMED_BY:${userId}`;
+}
+
+function setTeamTopic(topic, team) {
+  const t = String(topic || "");
+  if (/TEAM:\S+/.test(t)) return t.replace(/TEAM:\S+/, `TEAM:${team}`);
+  return t.trim().length ? `${t} | TEAM:${team}` : `TEAM:${team}`;
 }
 
 function v2Card(title, body) {
   const c = new ContainerBuilder().setAccentColor(BRAND_BLUE);
   c.addTextDisplayComponents((t) => t.setContent(`**${title}**`));
   c.addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  c.addTextDisplayComponents((t) => t.setContent(String(body || "\u200B").trim() || "\u200B"));
+  const safe = String(body || "\u200B");
+  c.addTextDisplayComponents((t) => t.setContent(safe.length ? safe : "\u200B"));
+  return c;
+}
+
+function ticketControlsContainer() {
+  const c = new ContainerBuilder().setAccentColor(BRAND_BLUE);
+  c.addTextDisplayComponents((t) => t.setContent("\u200B"));
+  c.addActionRowComponents((row) =>
+    row.setComponents(
+      new ButtonBuilder().setCustomId("ticket_claim").setLabel("Claim").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("ticket_hold").setLabel("Hold").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("ticket_transfer").setLabel("Transfer").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("ticket_close").setLabel("Close").setStyle(ButtonStyle.Danger)
+    )
+  );
   return c;
 }
 
@@ -84,18 +108,39 @@ async function logEmbed(guild, embed, file) {
   await ch.send(payload).catch(() => null);
 }
 
-function ticketControlsContainer() {
-  const c = new ContainerBuilder().setAccentColor(BRAND_BLUE);
-  c.addTextDisplayComponents((t) => t.setContent("\u200B"));
-  c.addActionRowComponents((row) =>
-    row.setComponents(
-      new ButtonBuilder().setCustomId("ticket_claim").setLabel("Claim").setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId("ticket_hold").setLabel("Hold").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("ticket_transfer").setLabel("Transfer").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("ticket_close").setLabel("Close").setStyle(ButtonStyle.Danger)
+async function closeTicket(channel, client, closedByUser) {
+  const guild = channel.guild;
+  const ownerId = getOwnerId(channel);
+  const claimedBy = getClaimedBy(channel);
+
+  const transcript = await saveTranscript(channel).catch(() => "");
+  const file = transcript ? transcriptAttachment(channel.id, transcript) : null;
+
+  const log = new EmbedBuilder()
+    .setTitle("Ticket Closed")
+    .setColor(BRAND_BLUE)
+    .setDescription(
+      `**Channel:** ${channel.toString()} (${channel.id})\n` +
+      `**Owner:** ${ownerId ? `<@${ownerId}> (${ownerId})` : "N/A"}\n` +
+      `**Claimed By:** ${claimedBy ? `<@${claimedBy}> (${claimedBy})` : "Unclaimed"}\n` +
+      `**Closed By:** ${closedByUser.tag} (${closedByUser.id})\n` +
+      `**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
     )
-  );
-  return c;
+    .setTimestamp();
+
+  await logEmbed(guild, log, file);
+
+  const base = baseName(channel.name);
+  await channel.setName(`✅｜closed-${base}`.slice(0, 95)).catch(() => null);
+
+  await channel.send({
+    components: [v2Card("Ticket Closing", "Transcript saved. This channel will be deleted in a few seconds.")],
+    flags: MessageFlags.IsComponentsV2,
+  }).catch(() => null);
+
+  setTimeout(async () => {
+    await channel.delete("Ticket closed").catch(() => null);
+  }, 6000);
 }
 
 module.exports = {
@@ -245,6 +290,125 @@ module.exports = {
           components: [v2Card("Ticket Created", `Created ${channel.toString()} successfully.`)],
           flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
         });
+      }
+
+      if (interaction.isButton() && /^ticket_(claim|hold|transfer|close)$/.test(interaction.customId)) {
+        const channel = interaction.channel;
+        const guild = interaction.guild;
+        if (!guild || !channel || channel.type !== ChannelType.GuildText) return;
+
+        const ownerId = getOwnerId(channel);
+        if (!ownerId) {
+          return interaction.reply({ components: [v2Card("Error", "Ticket owner not found.")], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+        }
+
+        if (!isStaff(interaction.member)) {
+          return interaction.reply({ components: [v2Card("No Access", "Staff only.")], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+        }
+
+        if (interaction.customId === "ticket_claim") {
+          const already = getClaimedBy(channel);
+          if (already) return interaction.reply({ components: [v2Card("Already Claimed", `Already claimed by <@${already}>.`)], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+
+          await channel.setTopic(setClaimedByTopic(channel.topic || `OWNER:${ownerId}`, interaction.user.id)).catch(() => null);
+          await channel.setName(`📥｜claimed-${baseName(channel.name)}`.slice(0, 95)).catch(() => null);
+
+          await channel.send({ components: [v2Card("Ticket Claimed", `Claimed by ${interaction.user.tag}.`)], flags: MessageFlags.IsComponentsV2 }).catch(() => null);
+          await registerTicketClaim(client, channel);
+
+          const log = new EmbedBuilder().setTitle("Ticket Claimed").setColor(BRAND_BLUE).setDescription(`**Channel:** ${channel.toString()} (${channel.id})\n**By:** ${interaction.user.tag} (${interaction.user.id})\n**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`).setTimestamp();
+          await logEmbed(guild, log);
+
+          return interaction.reply({ components: [v2Card("Claimed", "Ticket claimed successfully.")], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+        }
+
+        if (interaction.customId === "ticket_hold") {
+          await channel.setName(`⏸️｜hold-${baseName(channel.name)}`.slice(0, 95)).catch(() => null);
+          await channel.send({ components: [v2Card("Ticket On Hold", `Put on hold by ${interaction.user.tag}.`)], flags: MessageFlags.IsComponentsV2 }).catch(() => null);
+
+          const log = new EmbedBuilder().setTitle("Ticket On Hold").setColor(BRAND_BLUE).setDescription(`**Channel:** ${channel.toString()} (${channel.id})\n**By:** ${interaction.user.tag} (${interaction.user.id})\n**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`).setTimestamp();
+          await logEmbed(guild, log);
+
+          return interaction.reply({ components: [v2Card("On Hold", "Ticket marked on hold.")], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+        }
+
+        if (interaction.customId === "ticket_transfer") {
+          const menu = new StringSelectMenuBuilder()
+            .setCustomId("ticket_transfer_select")
+            .setPlaceholder("Select a team")
+            .addOptions(
+              { label: "Customer Support Team", value: "support" },
+              { label: "Management Team", value: "management" },
+              { label: "Development Team", value: "dev" }
+            );
+
+          return interaction.reply({
+            components: [v2Card("Transfer Ticket", "Pick which team should handle this ticket."), new ActionRowBuilder().addComponents(menu)],
+            flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
+          });
+        }
+
+        if (interaction.customId === "ticket_close") {
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId("ticket_close_confirm").setLabel("Confirm Close").setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId("ticket_close_cancel").setLabel("Cancel").setStyle(ButtonStyle.Secondary)
+          );
+
+          return interaction.reply({
+            components: [v2Card("Close Ticket", "Are you sure you want to close this ticket?"), row],
+            flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
+          });
+        }
+      }
+
+      if (interaction.isStringSelectMenu() && interaction.customId === "ticket_transfer_select") {
+        const channel = interaction.channel;
+        const guild = interaction.guild;
+        if (!guild || !channel) return;
+
+        if (!isStaff(interaction.member)) return interaction.reply({ components: [v2Card("No Access", "Staff only.")], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+
+        const value = interaction.values[0];
+        const roleId = value === "support" ? ROLE_SUPPORT : value === "management" ? ROLE_MANAGEMENT : ROLE_DEV;
+        const label = value === "support" ? "Customer Support Team" : value === "management" ? "Management Team" : "Development Team";
+
+        await channel.setTopic(setTeamTopic(channel.topic || "", value)).catch(() => null);
+
+        await channel.send({
+          components: [v2Card("Ticket Transferred", `Transferred to **${label}** by ${interaction.user.tag}.\n<@&${roleId}>`)],
+          flags: MessageFlags.IsComponentsV2,
+          allowedMentions: { roles: [roleId] },
+        }).catch(() => null);
+
+        const ping = await channel.send({
+          content: `<@&${roleId}>`,
+          allowedMentions: { roles: [roleId] },
+        }).catch(() => null);
+
+        if (ping) setTimeout(() => ping.delete().catch(() => null), 4000);
+
+        const log = new EmbedBuilder().setTitle("Ticket Transferred").setColor(BRAND_BLUE).setDescription(`**Channel:** ${channel.toString()} (${channel.id})\n**To:** ${label}\n**By:** ${interaction.user.tag} (${interaction.user.id})\n**Time:** <t:${Math.floor(Date.now() / 1000)}:F>`).setTimestamp();
+        await logEmbed(guild, log);
+
+        return interaction.update({ components: [v2Card("Transferred", `Transferred to ${label}.`)], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+      }
+
+      if (interaction.isButton() && (interaction.customId === "ticket_close_confirm" || interaction.customId === "ticket_close_cancel")) {
+        const channel = interaction.channel;
+        const guild = interaction.guild;
+        if (!guild || !channel) return;
+
+        if (interaction.customId === "ticket_close_cancel") {
+          return interaction.update({ components: [v2Card("Cancelled", "Ticket closure cancelled.")], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+        }
+
+        if (!isStaff(interaction.member)) {
+          return interaction.update({ components: [v2Card("No Access", "Staff only.")], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+        }
+
+        await interaction.update({ components: [v2Card("Closing", "Closing ticket now…")], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+        await closeTicket(channel, client, interaction.user);
+        return;
       }
     } catch (err) {
       console.error("ticket interaction error:", err);

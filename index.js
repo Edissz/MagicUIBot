@@ -4,6 +4,9 @@ const { Client, Collection, GatewayIntentBits, Partials } = require("discord.js"
 const fs = require("fs");
 const path = require("path");
 
+process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
+process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -14,6 +17,8 @@ const client = new Client({
   ],
   partials: [Partials.Channel, Partials.Message],
 });
+
+client.on("error", (e) => console.error("client error:", e));
 
 client.commands = new Collection();
 client.prefix = "!";

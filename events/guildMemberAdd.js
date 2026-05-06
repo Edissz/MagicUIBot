@@ -21,7 +21,7 @@ module.exports = {
 • 📩 [Feedback](https://discord.com/channels/1151315619246002176/1426517448353517671)
 
 **<:techouse210:1421840914653122631> Need help?**
-Jump to our [Support Channel](https://discord.com/channels/1151315619246002176/1405208521871724605)
+Jump to our [Support Channel](https://discord.com/channels/1151315619246002176/1477251790713000088)
 
 ✨ *Enjoy your stay!*
         `)

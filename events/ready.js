@@ -1,13 +1,8 @@
 module.exports = {
-  name: 'messageCreate',
-  execute(message, client) {
-    if (!message.content.startsWith('!') || message.author.bot) return;
-
-    const args = message.content.slice(1).split(/ +/);
-    const commandName = args.shift().toLowerCase();
-    const command = client.commands.get(commandName);
-
-    if (command) command.execute(message, args, client);
+  name: 'ready',
+  once: true,
+  execute(client) {
+    console.log(`Ready as ${client.user.tag}`);
   },
 };
 

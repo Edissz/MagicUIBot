@@ -32,14 +32,14 @@ module.exports = {
         `> **Case ID:** #${caseNum}\n` +
         `> **Reason:** ${why}\n\n` +
         `If you believe this was a mistake, open an appeal:\n` +
-        `https://discord.com/channels/1151315619246002176/1405208521871724605\n\n` +
+        `https://discord.com/channels/1151315619246002176/1477251790713000088\n\n` +
         `Magic UI Moderation Team.`
       );
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setLabel('Appeal Here')
-        .setURL('https://discord.com/channels/1151315619246002176/1405208521871724605')
+        .setURL('https://discord.com/channels/1151315619246002176/1477251790713000088')
         .setStyle(ButtonStyle.Link)
     );
 
@@ -77,7 +77,7 @@ module.exports = {
           `**Magic UI - You received a punishment from our moderation team.**\n\n` +
           `> **Punishment:** Timeout (${hours}h)\n` +
           `> **Reason:** Accumulated 3 warns\n\n` +
-          `Appeal:\nhttps://discord.com/channels/1151315619246002176/1405208521871724605\n` +
+          `Appeal:\nhttps://discord.com/channels/1151315619246002176/1477251790713000088\n` +
           `Magic UI Moderation Team.`
         );
       try { await target.send({ embeds: [autoEmbed], components: [row] }); } catch {}

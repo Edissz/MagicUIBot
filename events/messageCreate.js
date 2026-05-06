@@ -5,8 +5,9 @@ module.exports = {
   async execute(message, client) {
     if (!message.guild) return;
     if (message.author.bot) return;
-    const prefix = client.prefix || '!';
-    if (!message.content.startsWith(prefix)) return;
+    const prefixes = [client.prefix || '!', '.'];
+    const prefix = prefixes.find(p => message.content.startsWith(p));
+    if (!prefix) return;
 
     if (processed.has(message.id)) return;
     processed.add(message.id);

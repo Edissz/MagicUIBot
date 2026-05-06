@@ -335,7 +335,7 @@ function buildJobPanelComponents() {
       )
       .addSeparatorComponents(separator())
       .addTextDisplayComponents(
-        text('### Create A Post\nChoose a post type below. The form will ask for category, payment method, title, description, images, contact, and an optional accent color.')
+        text('### Create A Post\nChoose a post type below. The first form collects the required details, then you can publish immediately or add optional images and a booster/admin accent color.')
       )
       .addActionRowComponents(new ActionRowBuilder().addComponents(menu))
       .addSeparatorComponents(separator())
@@ -680,6 +680,28 @@ function buildJobPostModal(type) {
     .setRequired(true)
     .setMaxLength(1800);
 
+  const contact = new TextInputBuilder()
+    .setCustomId('contact')
+    .setLabel('Who should they contact?')
+    .setPlaceholder('Discord username, user mention, email, website, or application link.')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(300);
+
+  modal.addLabelComponents(
+    labelSelect('Category', 'Pick the closest work category.', category),
+    labelSelect('Payment / Compensation', 'Choose how payment or contribution works.', payment),
+    labelText('Post title', 'Short, specific titles perform best.', title),
+    labelText('Main description', 'Include scope, budget/rate, requirements, timeline, and links.', body),
+    labelText('Contact', 'Discord, email, portfolio, or application link.', contact)
+  );
+
+  return modal;
+}
+
+function buildJobMediaModal(draftId) {
+  const modal = new ModalBuilder().setCustomId(`job_media_modal_${draftId}`).setTitle('Optional Post Media');
+
   const largeImage = new TextInputBuilder()
     .setCustomId('large_image')
     .setLabel('Large image URL (optional)')
@@ -696,14 +718,6 @@ function buildJobPostModal(type) {
     .setRequired(false)
     .setMaxLength(500);
 
-  const contact = new TextInputBuilder()
-    .setCustomId('contact')
-    .setLabel('Who should they contact?')
-    .setPlaceholder('Discord username, user mention, email, website, or application link.')
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true)
-    .setMaxLength(300);
-
   const color = new TextInputBuilder()
     .setCustomId('accent_color')
     .setLabel('Accent hex color (boosters/admins only)')
@@ -712,27 +726,66 @@ function buildJobPostModal(type) {
     .setRequired(false)
     .setMaxLength(20);
 
-  modal.addTextDisplayComponents(
-    text(
-      [
-        'Use clear, professional details. Category and payment are shown on the public post.',
-        'Custom colors only apply for server boosters and admins; everyone else posts with no accent color.'
-      ].join('\n')
-    )
-  );
-
   modal.addLabelComponents(
-    labelSelect('Category', 'Pick the closest work category.', category),
-    labelSelect('Payment / Compensation', 'Choose how payment or contribution works.', payment),
-    labelText('Post title', 'Short, specific titles perform best.', title),
-    labelText('Main description', 'Include scope, budget/rate, requirements, timeline, and links.', body),
     labelText('Large image URL', 'Optional. Use a direct HTTPS image link.', largeImage),
     labelText('Second image URL', 'Optional. Add one more supporting image.', image),
-    labelText('Contact', 'Discord, email, portfolio, or application link.', contact),
     labelText('Accent color', 'Optional hex; boosters/admins only.', color)
   );
 
   return modal;
+}
+
+function buildDraftPreviewComponents(draft) {
+  const meta = getTypeMeta(draft.type);
+  const accentText = Number.isInteger(draft.accentColor)
+    ? `#${draft.accentColor.toString(16).padStart(6, '0').toUpperCase()}`
+    : draft.requestedAccentColor && !draft.customColorAllowed
+      ? 'Ignored - boosters/admins only'
+      : 'None';
+
+  return [
+    new ContainerBuilder()
+      .setAccentColor(CONFIG.colors.panel)
+      .addTextDisplayComponents(
+        text(`# Review Job Post Draft`),
+        text(
+          [
+            `${meta.emojiText} Type: **${meta.label}**`,
+            `Title: **${draft.title}**`,
+            `Category: **${categoryLabel(draft.category)}**`,
+            `Payment: **${paymentLabel(draft.payment)}**`,
+            `Contact: ${draft.contact}`,
+            `Accent color: **${accentText}**`
+          ].join('\n')
+        )
+      )
+      .addSeparatorComponents(separator())
+      .addTextDisplayComponents(
+        text(`### Description Preview\n${draft.body.slice(0, 900)}${draft.body.length > 900 ? '...' : ''}`)
+      )
+      .addSeparatorComponents(separator())
+      .addTextDisplayComponents(
+        text('Publish now, or add optional media/color first. Images and custom colors are optional.')
+      )
+      .addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`job_draft_publish_${draft.id}`)
+            .setLabel('Publish Post')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji(EMOJIS.verified),
+          new ButtonBuilder()
+            .setCustomId(`job_draft_media_${draft.id}`)
+            .setLabel('Images / Color')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji(EMOJIS.forHire),
+          new ButtonBuilder()
+            .setCustomId(`job_draft_cancel_${draft.id}`)
+            .setLabel('Cancel')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      )
+  ];
 }
 
 function buildReportModal(postId) {
@@ -876,7 +929,9 @@ module.exports = {
   buildAdminPostComponents,
   buildApplicationComponents,
   buildContactComponents,
+  buildDraftPreviewComponents,
   buildJobPanelComponents,
+  buildJobMediaModal,
   buildJobPostModal,
   buildPostComponents,
   buildReportComponents,

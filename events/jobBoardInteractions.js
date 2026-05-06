@@ -8,6 +8,8 @@ const {
   buildApplicationComponents,
   buildApplyModal,
   buildContactComponents,
+  buildDraftPreviewComponents,
+  buildJobMediaModal,
   buildJobPostModal,
   buildPostComponents,
   buildReportComponents,
@@ -55,6 +57,18 @@ function postIdFrom(customId, prefix) {
 function getModalSelectValue(interaction, customId, fallback) {
   const values = interaction.fields.getStringSelectValues(customId);
   return values[0] || fallback;
+}
+
+function getDraftStore(client) {
+  if (!client.__jobDrafts) client.__jobDrafts = new Map();
+  return client.__jobDrafts;
+}
+
+function getOwnedDraft(interaction, client, draftId) {
+  const draft = getDraftStore(client).get(draftId);
+  if (!draft) return null;
+  if (draft.authorId !== interaction.user.id && !isAdminMember(interaction.member)) return null;
+  return draft;
 }
 
 async function updatePublicPostMessage(guild, post) {
@@ -127,42 +141,110 @@ async function refreshCurrentReportCard(interaction, post) {
     .catch(() => null);
 }
 
-async function publishJobPost(interaction) {
-  await interaction.deferReply({ ephemeral: true });
-
+async function createJobDraft(interaction, client) {
   const type = interaction.customId.replace('job_post_modal_', '');
-  const meta = getTypeMeta(type);
-  const targetChannel = await fetchTextChannel(interaction.guild, meta.channelId);
-  if (!targetChannel) {
-    return interaction.editReply('<:cross:1430525603701850165> I could not find the target job channel.');
+  const draft = {
+    id: createId('jd'),
+    type,
+    category: getModalSelectValue(interaction, 'category', 'other'),
+    payment: getModalSelectValue(interaction, 'payment', 'negotiable'),
+    title: cleanTitle(interaction.fields.getTextInputValue('title')),
+    body: cleanText(interaction.fields.getTextInputValue('body'), 1800),
+    contact: cleanText(interaction.fields.getTextInputValue('contact'), 300),
+    largeImageUrl: null,
+    imageUrl: null,
+    accentColor: null,
+    requestedAccentColor: null,
+    customColorAllowed: canUseCustomPostColor(interaction.member),
+    authorId: interaction.user.id,
+    authorTag: interaction.user.tag,
+    createdAt: Date.now()
+  };
+
+  getDraftStore(client).set(draft.id, draft);
+
+  return interaction.reply({
+    components: buildDraftPreviewComponents(draft),
+    flags: EPHEMERAL_V2_FLAGS,
+    allowedMentions: SILENT_MENTIONS
+  });
+}
+
+async function updateDraftMedia(interaction, client) {
+  const draftId = postIdFrom(interaction.customId, 'job_media_modal_');
+  const draft = getOwnedDraft(interaction, client, draftId);
+  if (!draft) {
+    return interaction.reply({
+      content: '<:cross:1430525603701850165> That draft expired or belongs to someone else. Please start again from the job board panel.',
+      ephemeral: true
+    });
   }
 
   const largeImageRaw = interaction.fields.getTextInputValue('large_image');
   const imageRaw = interaction.fields.getTextInputValue('image');
   const colorRaw = interaction.fields.getTextInputValue('accent_color');
   const requestedColor = normalizeHexColor(colorRaw);
-  const mayUseColor = canUseCustomPostColor(interaction.member);
-  const accentColor = mayUseColor && Number.isInteger(requestedColor) ? requestedColor : null;
 
   if (requestedColor === undefined) {
-    return interaction.editReply('<:cross:1430525603701850165> The accent color must be a 6-digit hex value like `#06072C`, or left blank.');
+    return interaction.reply({
+      content: '<:cross:1430525603701850165> The accent color must be a 6-digit hex value like `#06072C`, or left blank.',
+      ephemeral: true
+    });
+  }
+
+  draft.largeImageUrl = normalizeImageUrl(largeImageRaw);
+  draft.imageUrl = normalizeImageUrl(imageRaw);
+  draft.requestedAccentColor = Number.isInteger(requestedColor) ? requestedColor : null;
+  draft.customColorAllowed = canUseCustomPostColor(interaction.member);
+  draft.accentColor = draft.customColorAllowed && Number.isInteger(requestedColor) ? requestedColor : null;
+  draft.updatedAt = Date.now();
+  getDraftStore(client).set(draft.id, draft);
+
+  const ignoredImages = [largeImageRaw, imageRaw].some(raw => {
+    const cleaned = cleanText(raw, 500, '');
+    return cleaned && !/^(n\/a|none|no|skip)$/i.test(cleaned) && !normalizeImageUrl(raw);
+  })
+    ? '\nOne optional image URL was invalid, so it was ignored.'
+    : '';
+  const ignoredColor = Number.isInteger(requestedColor) && !draft.customColorAllowed
+    ? '\nCustom color was ignored because that perk is only for server boosters and admins.'
+    : '';
+
+  return interaction.reply({
+    components: buildDraftPreviewComponents(draft),
+    flags: EPHEMERAL_V2_FLAGS,
+    allowedMentions: SILENT_MENTIONS
+  }).then(() => {
+    if (ignoredImages || ignoredColor) {
+      return interaction.followUp({ content: `${ignoredImages}${ignoredColor}`.trim(), ephemeral: true }).catch(() => null);
+    }
+    return null;
+  });
+}
+
+async function publishJobDraft(interaction, client, draft) {
+  const type = draft.type;
+  const meta = getTypeMeta(type);
+  const targetChannel = await fetchTextChannel(interaction.guild, meta.channelId);
+  if (!targetChannel) {
+    return interaction.editReply('<:cross:1430525603701850165> I could not find the target job channel.');
   }
 
   const post = {
     id: createId('jp'),
     type,
-    category: getModalSelectValue(interaction, 'category', 'other'),
-    payment: getModalSelectValue(interaction, 'payment', 'negotiable'),
-    title: cleanTitle(interaction.fields.getTextInputValue('title')),
-    body: cleanText(interaction.fields.getTextInputValue('body'), 1800),
-    largeImageUrl: normalizeImageUrl(largeImageRaw),
-    imageUrl: normalizeImageUrl(imageRaw),
-    accentColor,
-    requestedAccentColor: Number.isInteger(requestedColor) ? requestedColor : null,
-    customColorAllowed: mayUseColor,
-    contact: cleanText(interaction.fields.getTextInputValue('contact'), 300),
-    authorId: interaction.user.id,
-    authorTag: interaction.user.tag,
+    category: draft.category,
+    payment: draft.payment,
+    title: draft.title,
+    body: draft.body,
+    largeImageUrl: draft.largeImageUrl,
+    imageUrl: draft.imageUrl,
+    accentColor: draft.accentColor,
+    requestedAccentColor: draft.requestedAccentColor,
+    customColorAllowed: draft.customColorAllowed,
+    contact: draft.contact,
+    authorId: draft.authorId,
+    authorTag: draft.authorTag,
     createdAt: Date.now(),
     targetChannelId: meta.channelId,
     status: 'open',
@@ -198,19 +280,10 @@ async function publishJobPost(interaction) {
   }
 
   addPost(post);
-
-  const ignoredImages = [largeImageRaw, imageRaw].some(raw => {
-    const cleaned = cleanText(raw, 500, '');
-    return cleaned && !/^(n\/a|none|no|skip)$/i.test(cleaned) && !normalizeImageUrl(raw);
-  })
-    ? '\nOne optional image URL was invalid, so it was ignored.'
-    : '';
-  const ignoredColor = Number.isInteger(requestedColor) && !mayUseColor
-    ? '\nCustom color was ignored because that perk is only for server boosters and admins.'
-    : '';
+  getDraftStore(client).delete(draft.id);
 
   return interaction.editReply(
-    `<:check:1430525546608988203> Your ${meta.label.toLowerCase()} post is live: ${message.url}${ignoredImages}${ignoredColor}`
+    `<:check:1430525546608988203> Your ${meta.label.toLowerCase()} post is live: ${message.url}`
   );
 }
 
@@ -525,19 +598,52 @@ module.exports = {
       if (!interaction.guild) return;
 
       if (interaction.isStringSelectMenu() && interaction.customId === 'job_board_select') {
-        return interaction.showModal(buildJobPostModal(interaction.values[0]));
+        return await interaction.showModal(buildJobPostModal(interaction.values[0]));
       }
 
       if (interaction.isModalSubmit() && interaction.customId.startsWith('job_post_modal_')) {
-        return publishJobPost(interaction);
+        return await createJobDraft(interaction, client);
+      }
+
+      if (interaction.isButton() && interaction.customId.startsWith('job_draft_media_')) {
+        const draftId = postIdFrom(interaction.customId, 'job_draft_media_');
+        const draft = getOwnedDraft(interaction, client, draftId);
+        if (!draft) {
+          return interaction.reply({
+            content: '<:cross:1430525603701850165> That draft expired or belongs to someone else. Please start again from the job board panel.',
+            ephemeral: true
+          });
+        }
+        return await interaction.showModal(buildJobMediaModal(draft.id));
+      }
+
+      if (interaction.isModalSubmit() && interaction.customId.startsWith('job_media_modal_')) {
+        return await updateDraftMedia(interaction, client);
+      }
+
+      if (interaction.isButton() && interaction.customId.startsWith('job_draft_publish_')) {
+        await interaction.deferReply({ ephemeral: true });
+        const draftId = postIdFrom(interaction.customId, 'job_draft_publish_');
+        const draft = getOwnedDraft(interaction, client, draftId);
+        if (!draft) {
+          return interaction.editReply('<:cross:1430525603701850165> That draft expired or belongs to someone else. Please start again from the job board panel.');
+        }
+        return await publishJobDraft(interaction, client, draft);
+      }
+
+      if (interaction.isButton() && interaction.customId.startsWith('job_draft_cancel_')) {
+        const draftId = postIdFrom(interaction.customId, 'job_draft_cancel_');
+        const draft = getOwnedDraft(interaction, client, draftId);
+        if (draft) getDraftStore(client).delete(draft.id);
+        return interaction.reply({ content: '<:check:1430525546608988203> Draft cancelled.', ephemeral: true });
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_admin_')) {
-        return handleAdminAction(interaction);
+        return await handleAdminAction(interaction);
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_report_resolve_')) {
-        return handleReportResolve(interaction);
+        return await handleReportResolve(interaction);
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_contact_')) {
@@ -558,11 +664,11 @@ module.exports = {
         if (!post || post.removed) {
           return interaction.reply({ content: '<:cross:1430525603701850165> That job post is no longer available.', ephemeral: true });
         }
-        return interaction.showModal(buildReviewModal(post.id));
+        return await interaction.showModal(buildReviewModal(post.id));
       }
 
       if (interaction.isModalSubmit() && interaction.customId.startsWith('job_review_modal_')) {
-        return handleReviewSubmit(interaction);
+        return await handleReviewSubmit(interaction);
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_report_')) {
@@ -570,11 +676,11 @@ module.exports = {
         if (!post || post.removed) {
           return interaction.reply({ content: '<:cross:1430525603701850165> That job post is no longer available.', ephemeral: true });
         }
-        return interaction.showModal(buildReportModal(post.id));
+        return await interaction.showModal(buildReportModal(post.id));
       }
 
       if (interaction.isModalSubmit() && interaction.customId.startsWith('job_report_modal_')) {
-        return handleReportSubmit(interaction);
+        return await handleReportSubmit(interaction);
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_apply_')) {
@@ -582,11 +688,11 @@ module.exports = {
         if (!post || post.removed || post.type !== 'hiring' || post.status !== 'open') {
           return interaction.reply({ content: '<:cross:1430525603701850165> This opportunity is not open for applications.', ephemeral: true });
         }
-        return interaction.showModal(buildApplyModal(post.id));
+        return await interaction.showModal(buildApplyModal(post.id));
       }
 
       if (interaction.isModalSubmit() && interaction.customId.startsWith('job_apply_modal_')) {
-        return handleApplySubmit(interaction, client);
+        return await handleApplySubmit(interaction, client);
       }
     } catch (err) {
       return sendError(interaction, err);

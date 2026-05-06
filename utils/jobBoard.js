@@ -29,7 +29,7 @@ const CONFIG = {
   reportChannelId: '1501563431218708570',
   staffRoleIds: ['1405207645618700349', '1324536259439362089'],
   colors: {
-    panel: 0xf5a3c7,
+    panel: 0xf38cb6,
     forHire: 0x2dd4bf,
     hiring: 0x60a5fa,
     admin: 0xfacc15,
@@ -79,6 +79,7 @@ const PAYMENT_OPTIONS = [
 ];
 
 const STORE_FILE = path.join(__dirname, '..', 'data', 'jobPosts.json');
+const JOB_PANEL_IMAGE_URL = 'https://cdn.discordapp.com/attachments/1463916239528267839/1501582387732283464/She_Builds._14.png?ex=69fc9913&is=69fb4793&hm=c06b88903df4701b2ba4181f5916fc6b34baa8b17f815b879b040f5302061e96';
 
 function defaultStore() {
   return {
@@ -308,6 +309,13 @@ function buildJobPanelComponents() {
             `${EMOJI_TEXT.hiring} **Hiring:** post roles, gigs, or briefs in <#${CONFIG.hiringChannelId}>.`,
             `${EMOJI_TEXT.verified} **Verified:** staff-reviewed opportunities.`
           ].join('\n')
+        )
+      )
+      .addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems(
+          new MediaGalleryItemBuilder()
+            .setURL(JOB_PANEL_IMAGE_URL)
+            .setDescription('MagicUI Job Board')
         )
       )
       .addSeparatorComponents(separator())

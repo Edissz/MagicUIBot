@@ -3,7 +3,6 @@ const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('
 module.exports = {
   name: 'guildMemberAdd',
   async execute(member) {
-    // Small delay to ensure the bot can DM right after join
     await new Promise(res => setTimeout(res, 2000));
 
     try {

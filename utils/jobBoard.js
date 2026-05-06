@@ -6,6 +6,7 @@ const {
   ButtonStyle,
   ChannelType,
   ContainerBuilder,
+  LabelBuilder,
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
   MessageFlags,
@@ -26,7 +27,7 @@ const CONFIG = {
   forHireChannelId: '1501531243395809440',
   hiringChannelId: '1501531376581742622',
   adminChannelId: '1501536845794775060',
-  reportChannelId: '1151318734158446624',
+  reportChannelId: '1501563431218708570',
   staffRoleIds: ['1405207645618700349', '1324536259439362089'],
   colors: {
     panel: 0x06072c,
@@ -34,7 +35,8 @@ const CONFIG = {
     hiring: 0x60a5fa,
     admin: 0xfacc15,
     report: 0xef4444,
-    verified: 0x22c55e
+    verified: 0x22c55e,
+    neutral: 0x2b2d31
   }
 };
 
@@ -42,17 +44,40 @@ const EMOJIS = {
   forHire: { id: '1492616764335460482', name: 'joblinkbulkrounded' },
   hiring: { id: '1492616786166677544', name: 'jobsearchbulkrounded1' },
   report: { id: '1492622062647250995', name: 'alert02bulkrounded' },
-  verified: { id: '1474144632844718251', name: 'verified' },
-  apply: { id: '1473388533971681464', name: '4534' }
+  verified: { id: '1501564584211779604', name: 'checkmarkbadge02bulkrounded' },
+  apply: { id: '1473388533971681464', name: '4534' },
+  review: { id: '1501563855539535882', name: 'starbulkrounded' },
+  starGold: { id: '1501564079813431427', name: 'starbulkrounded1' },
+  contact: { id: '1501564351763710137', name: 'mailaccount02bulkrounded' }
 };
 
 const EMOJI_TEXT = {
   forHire: '<:joblinkbulkrounded:1492616764335460482>',
   hiring: '<:jobsearchbulkrounded1:1492616786166677544>',
   report: '<:alert02bulkrounded:1492622062647250995>',
-  verified: '<:verified:1474144632844718251>',
-  apply: '<:4534:1473388533971681464>'
+  verified: '<:checkmarkbadge02bulkrounded:1501564584211779604>',
+  apply: '<:4534:1473388533971681464>',
+  review: '<:starbulkrounded:1501563855539535882>',
+  starGold: '<:starbulkrounded1:1501564079813431427>',
+  contact: '<:mailaccount02bulkrounded:1501564351763710137>'
 };
+
+const CATEGORY_OPTIONS = [
+  { label: 'Design Engineering', value: 'design_engineering', description: 'UI systems, motion, prototyping, frontend craft.' },
+  { label: 'Frontend Development', value: 'frontend_development', description: 'React, Next.js, components, dashboards, landing pages.' },
+  { label: 'UI / UX Design', value: 'ui_ux_design', description: 'Product design, visual design, flows, prototypes.' },
+  { label: 'Brand / Graphics', value: 'brand_graphics', description: 'Brand kits, logos, social graphics, presentation visuals.' },
+  { label: 'Full-Stack / Backend', value: 'full_stack_backend', description: 'APIs, databases, integrations, auth, infrastructure.' },
+  { label: 'Other', value: 'other', description: 'Something useful that does not fit the main categories.' }
+];
+
+const PAYMENT_OPTIONS = [
+  { label: 'Paid - PayPal', value: 'paid_paypal', description: 'Payment handled through PayPal.' },
+  { label: 'Paid - Crypto', value: 'paid_crypto', description: 'Payment handled through crypto.' },
+  { label: 'Paid - Other Method', value: 'paid_other', description: 'Stripe, bank, Wise, local transfer, or another method.' },
+  { label: 'Volunteer / Unpaid', value: 'volunteer', description: 'No payment; contribution, collaboration, or community work.' },
+  { label: 'Negotiable', value: 'negotiable', description: 'Payment method or compensation is decided after contact.' }
+];
 
 const STORE_FILE = path.join(__dirname, '..', 'data', 'jobPosts.json');
 
@@ -149,6 +174,10 @@ function isAdminMember(member) {
   );
 }
 
+function canUseCustomPostColor(member) {
+  return isAdminMember(member) || Boolean(member?.premiumSince || member?.premiumSinceTimestamp);
+}
+
 async function fetchTextChannel(guild, channelId) {
   const channel = await guild.channels.fetch(channelId).catch(() => null);
   if (!channel || !channel.isTextBased()) return null;
@@ -182,12 +211,43 @@ function normalizeImageUrl(value) {
   }
 }
 
+function normalizeHexColor(value) {
+  const raw = cleanText(value, 20, '').replace(/^#/, '').trim();
+  if (!raw || /^(n\/a|none|no|skip)$/i.test(raw)) return null;
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return undefined;
+  return Number.parseInt(raw, 16);
+}
+
 function text(content) {
   return new TextDisplayBuilder().setContent(content);
 }
 
 function separator(spacing = SeparatorSpacingSize.Small) {
   return new SeparatorBuilder().setDivider(true).setSpacing(spacing);
+}
+
+function labelText(label, description, input) {
+  const builder = new LabelBuilder().setLabel(label).setTextInputComponent(input);
+  if (description) builder.setDescription(description);
+  return builder;
+}
+
+function labelSelect(label, description, select) {
+  const builder = new LabelBuilder().setLabel(label).setStringSelectMenuComponent(select);
+  if (description) builder.setDescription(description);
+  return builder;
+}
+
+function optionLabel(options, value, fallback = 'Not specified') {
+  return options.find(option => option.value === value)?.label || fallback;
+}
+
+function categoryLabel(value) {
+  return optionLabel(CATEGORY_OPTIONS, value, 'Other');
+}
+
+function paymentLabel(value) {
+  return optionLabel(PAYMENT_OPTIONS, value, 'Not specified');
 }
 
 function getTypeMeta(type) {
@@ -214,7 +274,9 @@ function ratingSummary(reviews = []) {
   if (!reviews.length) return 'No reviews yet';
   const total = reviews.reduce((sum, review) => sum + Number(review.rating || 0), 0);
   const average = Math.round((total / reviews.length) * 10) / 10;
-  return `${average}/5 from ${reviews.length} review${reviews.length === 1 ? '' : 's'}`;
+  const rounded = Math.max(1, Math.min(5, Math.round(average)));
+  const stars = `${EMOJI_TEXT.starGold.repeat(rounded)}${EMOJI_TEXT.review.repeat(5 - rounded)}`;
+  return `${stars} ${average}/5 from ${reviews.length} review${reviews.length === 1 ? '' : 's'}`;
 }
 
 function statusLabel(post) {
@@ -232,16 +294,16 @@ function publicPostUrl(post) {
 function buildJobPanelComponents() {
   const menu = new StringSelectMenuBuilder()
     .setCustomId('job_board_select')
-    .setPlaceholder('Choose what you want to post')
+    .setPlaceholder('Select the type of job board post you want to create')
     .addOptions(
       new StringSelectMenuOptionBuilder()
         .setLabel('Post For Hire')
-        .setDescription('Offer your skills, services, or availability.')
+        .setDescription('Offer your skills, services, portfolio, or availability.')
         .setValue('for_hire')
         .setEmoji(EMOJIS.forHire),
       new StringSelectMenuOptionBuilder()
         .setLabel('Post Hiring Position')
-        .setDescription('Share an open role, gig, commission, or project.')
+        .setDescription('Share a role, gig, commission, bounty, or project brief.')
         .setValue('hiring')
         .setEmoji(EMOJIS.hiring)
     );
@@ -253,21 +315,32 @@ function buildJobPanelComponents() {
         text(`# ${EMOJI_TEXT.hiring} MagicUI Job Board`),
         text(
           [
-            'Post serious work opportunities for the MagicUI community.',
-            `${EMOJI_TEXT.forHire} **For Hire** posts go to <#${CONFIG.forHireChannelId}>.`,
-            `${EMOJI_TEXT.hiring} **Hiring** posts go to <#${CONFIG.hiringChannelId}>.`,
-            `${EMOJI_TEXT.verified} Staff can verify trusted opportunities after review.`
+            'A curated place for MagicUI members to find talent, offer services, and share real opportunities.',
+            '',
+            `${EMOJI_TEXT.forHire} **For Hire** - introduce your skills, portfolio, rates, and availability in <#${CONFIG.forHireChannelId}>.`,
+            `${EMOJI_TEXT.hiring} **Hiring** - publish open roles, paid gigs, collaborations, or project briefs in <#${CONFIG.hiringChannelId}>.`,
+            `${EMOJI_TEXT.verified} **Verified opportunities** are reviewed by staff and marked directly on the post.`
           ].join('\n')
         )
       )
       .addSeparatorComponents(separator())
       .addTextDisplayComponents(
-        text('Choose the post type below. You will get a form for title, text, images, and contact details.')
+        text(
+          [
+            '### Before You Post',
+            'Use a clear title, include payment expectations, choose the closest category, and add contact details that actually work.',
+            'Posts with misleading details, unsafe links, spam, or stolen work may be removed by staff.'
+          ].join('\n')
+        )
+      )
+      .addSeparatorComponents(separator())
+      .addTextDisplayComponents(
+        text('### Create A Post\nChoose a post type below. The form will ask for category, payment method, title, description, images, contact, and an optional accent color.')
       )
       .addActionRowComponents(new ActionRowBuilder().addComponents(menu))
       .addSeparatorComponents(separator())
       .addTextDisplayComponents(
-        text(`${EMOJI_TEXT.report} Every post can be reported and reviewed by staff.`)
+        text(`${EMOJI_TEXT.report} Reports are private and go straight to the moderation team for review.`)
       )
   ];
 }
@@ -319,29 +392,38 @@ function buildPostComponents(post) {
     : 'Staff verification pending';
   const latestReview = reviews.length ? reviews[reviews.length - 1] : null;
   const applyLine = post.type === 'hiring' ? `Applications: ${applications.length}` : null;
+  const latestReviewRating = Math.max(1, Math.min(5, Math.round(Number(latestReview?.rating || 0))));
+  const latestReviewLine = latestReview
+    ? `**Latest review:** ${EMOJI_TEXT.starGold.repeat(latestReviewRating)}${EMOJI_TEXT.review.repeat(5 - latestReviewRating)} ${latestReview.body}`
+    : null;
 
-  const container = new ContainerBuilder()
-    .setAccentColor(post.verified ? CONFIG.colors.verified : meta.color)
+  const container = new ContainerBuilder();
+  if (Number.isInteger(post.accentColor)) container.setAccentColor(post.accentColor);
+
+  container
     .addTextDisplayComponents(
-      text(`# ${meta.emojiText} ${post.title}`),
+      text(`# ${post.title}`),
       text(
         [
-          `**${meta.label}** by <@${post.authorId}>`,
+          `${meta.emojiText} **${meta.label}** by <@${post.authorId}>`,
           `${verified}`,
+          `Category: **${categoryLabel(post.category)}**`,
+          `Payment: **${paymentLabel(post.payment)}**`,
           `Status: **${statusLabel(post)}**`,
           `Posted: <t:${Math.floor(post.createdAt / 1000)}:R>`
         ].join('\n')
       )
     )
     .addSeparatorComponents(separator(SeparatorSpacingSize.Large))
+    .addTextDisplayComponents(text('### Details'))
     .addTextDisplayComponents(
       text(post.body),
       text(
         [
-          `**Contact:** ${post.contact}`,
-          `**Reviews:** ${ratingSummary(reviews)}`,
+          `${EMOJI_TEXT.contact} **Contact:** ${post.contact}`,
+          `${EMOJI_TEXT.review} **Reviews:** ${ratingSummary(reviews)}`,
           applyLine,
-          latestReview ? `**Latest review:** ${latestReview.rating}/5 - ${latestReview.body}` : null
+          latestReviewLine
         ]
           .filter(Boolean)
           .join('\n')
@@ -378,16 +460,16 @@ function buildPostComponents(post) {
         .setCustomId(`job_contact_${post.id}`)
         .setLabel('Contact')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji(meta.emoji),
+        .setEmoji(EMOJIS.contact),
       new ButtonBuilder()
         .setCustomId(`job_review_${post.id}`)
         .setLabel('Review')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji(EMOJIS.verified),
+        .setEmoji(EMOJIS.review),
       new ButtonBuilder()
         .setCustomId(`job_report_${post.id}`)
         .setLabel('Report')
-        .setStyle(ButtonStyle.Danger)
+        .setStyle(ButtonStyle.Secondary)
         .setEmoji(EMOJIS.report)
     );
 
@@ -429,6 +511,9 @@ function buildAdminPostComponents(post) {
           [
             `Author: <@${post.authorId}> (${post.authorId})`,
             `Type: **${meta.label}**`,
+            `Category: **${categoryLabel(post.category)}**`,
+            `Payment: **${paymentLabel(post.payment)}**`,
+            `Custom color: **${Number.isInteger(post.accentColor) ? `#${post.accentColor.toString(16).padStart(6, '0').toUpperCase()}` : 'None'}**`,
             `Status: **${statusLabel(post)}**`,
             `Verified: **${post.verified ? 'Yes' : 'No'}**`,
             `Reports: **${reportCount}** | Reviews: **${reviewCount}** | Applications: **${applicationCount}**`,
@@ -508,13 +593,22 @@ function buildReportComponents(post, report) {
 }
 
 function buildContactComponents(post) {
-  const meta = getTypeMeta(post.type);
+  const container = new ContainerBuilder();
+  if (Number.isInteger(post.accentColor)) container.setAccentColor(post.accentColor);
+
   return [
-    new ContainerBuilder()
-      .setAccentColor(meta.color)
+    container
       .addTextDisplayComponents(
-        text(`# ${meta.emojiText} Contact Details`),
-        text([`Post: **${post.title}**`, `Poster: <@${post.authorId}>`, `Contact: ${post.contact}`].join('\n'))
+        text(`# ${EMOJI_TEXT.contact} Contact Details`),
+        text(
+          [
+            `Post: **${post.title}**`,
+            `Category: **${categoryLabel(post.category)}**`,
+            `Payment: **${paymentLabel(post.payment)}**`,
+            `Poster: <@${post.authorId}>`,
+            `Contact: ${post.contact}`
+          ].join('\n')
+        )
       )
   ];
 }
@@ -544,6 +638,32 @@ function buildJobPostModal(type) {
   const meta = getTypeMeta(type);
   const modal = new ModalBuilder().setCustomId(`job_post_modal_${type}`).setTitle(`Create ${meta.label} Post`);
 
+  const category = new StringSelectMenuBuilder()
+    .setCustomId('category')
+    .setPlaceholder('Choose the closest category')
+    .setRequired(true)
+    .addOptions(
+      ...CATEGORY_OPTIONS.map(option =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(option.label)
+          .setDescription(option.description)
+          .setValue(option.value)
+      )
+    );
+
+  const payment = new StringSelectMenuBuilder()
+    .setCustomId('payment')
+    .setPlaceholder('Choose payment or compensation type')
+    .setRequired(true)
+    .addOptions(
+      ...PAYMENT_OPTIONS.map(option =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(option.label)
+          .setDescription(option.description)
+          .setValue(option.value)
+      )
+    );
+
   const title = new TextInputBuilder()
     .setCustomId('title')
     .setLabel('Post title')
@@ -555,7 +675,7 @@ function buildJobPostModal(type) {
   const body = new TextInputBuilder()
     .setCustomId('body')
     .setLabel('Main text')
-    .setPlaceholder('Describe the work, skills, budget/rate, requirements, timeline, and important links.')
+    .setPlaceholder('Describe scope, skills, budget/rate, requirements, timeline, proof links, and expectations.')
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
     .setMaxLength(1800);
@@ -584,12 +704,32 @@ function buildJobPostModal(type) {
     .setRequired(true)
     .setMaxLength(300);
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(title),
-    new ActionRowBuilder().addComponents(body),
-    new ActionRowBuilder().addComponents(largeImage),
-    new ActionRowBuilder().addComponents(image),
-    new ActionRowBuilder().addComponents(contact)
+  const color = new TextInputBuilder()
+    .setCustomId('accent_color')
+    .setLabel('Accent hex color (boosters/admins only)')
+    .setPlaceholder('#FFFFFF, 06072C, or leave blank')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(20);
+
+  modal.addTextDisplayComponents(
+    text(
+      [
+        'Use clear, professional details. Category and payment are shown on the public post.',
+        'Custom colors only apply for server boosters and admins; everyone else posts with no accent color.'
+      ].join('\n')
+    )
+  );
+
+  modal.addLabelComponents(
+    labelSelect('Category', 'Pick the closest work category.', category),
+    labelSelect('Payment / Compensation', 'Choose how payment or contribution works.', payment),
+    labelText('Post title', 'Short, specific titles perform best.', title),
+    labelText('Main description', 'Include scope, budget/rate, requirements, timeline, and links.', body),
+    labelText('Large image URL', 'Optional. Use a direct HTTPS image link.', largeImage),
+    labelText('Second image URL', 'Optional. Add one more supporting image.', image),
+    labelText('Contact', 'Discord, email, portfolio, or application link.', contact),
+    labelText('Accent color', 'Optional hex; boosters/admins only.', color)
   );
 
   return modal;
@@ -743,6 +883,8 @@ module.exports = {
   buildReportModal,
   buildReviewModal,
   buildApplyModal,
+  canUseCustomPostColor,
+  categoryLabel,
   cleanText,
   cleanTitle,
   createId,
@@ -751,7 +893,9 @@ module.exports = {
   getTypeMeta,
   isAdminMember,
   loadStore,
+  normalizeHexColor,
   normalizeImageUrl,
+  paymentLabel,
   publicPostUrl,
   saveStore,
   sendAdminHub,

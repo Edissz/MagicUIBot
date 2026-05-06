@@ -13,6 +13,7 @@ const {
   buildReportComponents,
   buildReportModal,
   buildReviewModal,
+  canUseCustomPostColor,
   cleanText,
   cleanTitle,
   createId,
@@ -21,6 +22,7 @@ const {
   getTypeMeta,
   isAdminMember,
   loadStore,
+  normalizeHexColor,
   normalizeImageUrl,
   sendAdminHub,
   sendPublicPanel,
@@ -48,6 +50,11 @@ async function sendError(interaction, err) {
 
 function postIdFrom(customId, prefix) {
   return customId.slice(prefix.length);
+}
+
+function getModalSelectValue(interaction, customId, fallback) {
+  const values = interaction.fields.getStringSelectValues(customId);
+  return values[0] || fallback;
 }
 
 async function updatePublicPostMessage(guild, post) {
@@ -132,13 +139,27 @@ async function publishJobPost(interaction) {
 
   const largeImageRaw = interaction.fields.getTextInputValue('large_image');
   const imageRaw = interaction.fields.getTextInputValue('image');
+  const colorRaw = interaction.fields.getTextInputValue('accent_color');
+  const requestedColor = normalizeHexColor(colorRaw);
+  const mayUseColor = canUseCustomPostColor(interaction.member);
+  const accentColor = mayUseColor && Number.isInteger(requestedColor) ? requestedColor : null;
+
+  if (requestedColor === undefined) {
+    return interaction.editReply('<:cross:1430525603701850165> The accent color must be a 6-digit hex value like `#06072C`, or left blank.');
+  }
+
   const post = {
     id: createId('jp'),
     type,
+    category: getModalSelectValue(interaction, 'category', 'other'),
+    payment: getModalSelectValue(interaction, 'payment', 'negotiable'),
     title: cleanTitle(interaction.fields.getTextInputValue('title')),
     body: cleanText(interaction.fields.getTextInputValue('body'), 1800),
     largeImageUrl: normalizeImageUrl(largeImageRaw),
     imageUrl: normalizeImageUrl(imageRaw),
+    accentColor,
+    requestedAccentColor: Number.isInteger(requestedColor) ? requestedColor : null,
+    customColorAllowed: mayUseColor,
     contact: cleanText(interaction.fields.getTextInputValue('contact'), 300),
     authorId: interaction.user.id,
     authorTag: interaction.user.tag,
@@ -184,9 +205,12 @@ async function publishJobPost(interaction) {
   })
     ? '\nOne optional image URL was invalid, so it was ignored.'
     : '';
+  const ignoredColor = Number.isInteger(requestedColor) && !mayUseColor
+    ? '\nCustom color was ignored because that perk is only for server boosters and admins.'
+    : '';
 
   return interaction.editReply(
-    `<:check:1430525546608988203> Your ${meta.label.toLowerCase()} post is live: ${message.url}${ignoredImages}`
+    `<:check:1430525546608988203> Your ${meta.label.toLowerCase()} post is live: ${message.url}${ignoredImages}${ignoredColor}`
   );
 }
 

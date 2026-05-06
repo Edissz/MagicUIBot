@@ -29,7 +29,7 @@ const CONFIG = {
   reportChannelId: '1501563431218708570',
   staffRoleIds: ['1405207645618700349', '1324536259439362089'],
   colors: {
-    panel: 0xf0abfc,
+    panel: 0xf38cb6,
     forHire: 0x2dd4bf,
     hiring: 0x60a5fa,
     admin: 0xfacc15,
@@ -299,15 +299,15 @@ function buildJobPanelComponents() {
     new ContainerBuilder()
       .setAccentColor(CONFIG.colors.panel)
       .addTextDisplayComponents(
-        text('# MagicUI Job Board'),
+        text(`${EMOJI_TEXT.hiring} # MagicUI Job Board`),
         text(
           [
-            'A curated place for MagicUI members to find talent, offer services, and share real opportunities.',
-            `Post jobs channel: <#${CONFIG.jobPanelChannelId}>`,
+            'A polished space for MagicUI members to discover talent, offer services, and share real work opportunities.',
+            `Browse and post opportunities in <#${CONFIG.jobPanelChannelId}>.`,
             '',
-            `${EMOJI_TEXT.forHire} **For Hire** - introduce your skills, portfolio, rates, and availability in <#${CONFIG.forHireChannelId}>.`,
-            `${EMOJI_TEXT.hiring} **Hiring** - publish open roles, paid gigs, collaborations, or project briefs in <#${CONFIG.hiringChannelId}>.`,
-            `${EMOJI_TEXT.verified} **Verified opportunities** are reviewed by staff and marked directly on the post.`
+            `${EMOJI_TEXT.forHire} **For Hire** - showcase your skills, portfolio, rates, and availability in <#${CONFIG.forHireChannelId}>.`,
+            `${EMOJI_TEXT.hiring} **Hiring** - publish open roles, commissions, paid gigs, collaborations, or project briefs in <#${CONFIG.hiringChannelId}>.`,
+            `${EMOJI_TEXT.verified} **Verified posts** are reviewed by staff and marked so members can spot trusted opportunities quickly.`
           ].join('\n')
         )
       )
@@ -316,14 +316,21 @@ function buildJobPanelComponents() {
         text(
           [
             '### Before You Post',
-            'Use a clear title, include payment expectations, choose the closest category, and add contact details that actually work.',
-            'Posts with misleading details, unsafe links, spam, or stolen work may be removed by staff.'
+            `${EMOJI_TEXT.review} Use a clear title, choose the closest category, and include payment or compensation details.`,
+            `${EMOJI_TEXT.contact} Add contact information that is easy to use, such as Discord, email, portfolio, or an application link.`,
+            `${EMOJI_TEXT.report} Misleading posts, unsafe links, spam, or stolen work may be removed by staff.`
           ].join('\n')
         )
       )
       .addSeparatorComponents(separator())
       .addTextDisplayComponents(
-        text('### Create A Post\nChoose a post type below. The first form collects the required details, then you can publish immediately or add optional images and a booster/admin accent color.')
+        text(
+          [
+            '### Create A Post',
+            'Pick a post type below to begin. You will choose category and payment first, then fill out the post details.',
+            'Before publishing, you can preview the draft and optionally add images or a booster/admin accent color.'
+          ].join('\n')
+        )
       )
       .addActionRowComponents(new ActionRowBuilder().addComponents(menu))
       .addSeparatorComponents(separator())

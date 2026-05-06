@@ -29,7 +29,7 @@ const CONFIG = {
   reportChannelId: '1501563431218708570',
   staffRoleIds: ['1405207645618700349', '1324536259439362089'],
   colors: {
-    panel: 0xf38cb6,
+    panel: 0xf5a3c7,
     forHire: 0x2dd4bf,
     hiring: 0x60a5fa,
     admin: 0xfacc15,
@@ -281,7 +281,7 @@ function publicPostUrl(post) {
 function buildJobPanelComponents() {
   const menu = new StringSelectMenuBuilder()
     .setCustomId('job_board_select')
-    .setPlaceholder('Select the type of job board post you want to create')
+    .setPlaceholder('Choose post type')
     .addOptions(
       new StringSelectMenuOptionBuilder()
         .setLabel('Post For Hire')
@@ -299,15 +299,14 @@ function buildJobPanelComponents() {
     new ContainerBuilder()
       .setAccentColor(CONFIG.colors.panel)
       .addTextDisplayComponents(
-        text(`${EMOJI_TEXT.hiring} # MagicUI Job Board`),
+        text('# MagicUI Job Board'),
         text(
           [
-            'A polished space for MagicUI members to discover talent, offer services, and share real work opportunities.',
-            `Browse and post opportunities in <#${CONFIG.jobPanelChannelId}>.`,
+            `Find talent, offer services, or share work opportunities in <#${CONFIG.jobPanelChannelId}>.`,
             '',
-            `${EMOJI_TEXT.forHire} **For Hire** - showcase your skills, portfolio, rates, and availability in <#${CONFIG.forHireChannelId}>.`,
-            `${EMOJI_TEXT.hiring} **Hiring** - publish open roles, commissions, paid gigs, collaborations, or project briefs in <#${CONFIG.hiringChannelId}>.`,
-            `${EMOJI_TEXT.verified} **Verified posts** are reviewed by staff and marked so members can spot trusted opportunities quickly.`
+            `${EMOJI_TEXT.forHire} **For Hire:** showcase your skills in <#${CONFIG.forHireChannelId}>.`,
+            `${EMOJI_TEXT.hiring} **Hiring:** post roles, gigs, or briefs in <#${CONFIG.hiringChannelId}>.`,
+            `${EMOJI_TEXT.verified} **Verified:** staff-reviewed opportunities.`
           ].join('\n')
         )
       )
@@ -315,10 +314,9 @@ function buildJobPanelComponents() {
       .addTextDisplayComponents(
         text(
           [
-            '### Before You Post',
-            `${EMOJI_TEXT.review} Use a clear title, choose the closest category, and include payment or compensation details.`,
-            `${EMOJI_TEXT.contact} Add contact information that is easy to use, such as Discord, email, portfolio, or an application link.`,
-            `${EMOJI_TEXT.report} Misleading posts, unsafe links, spam, or stolen work may be removed by staff.`
+            '### Before Posting',
+            'Use a clear title, choose the right category, include payment details, and add a real contact method.',
+            'Spam, unsafe links, or misleading posts may be removed.'
           ].join('\n')
         )
       )
@@ -327,15 +325,14 @@ function buildJobPanelComponents() {
         text(
           [
             '### Create A Post',
-            'Pick a post type below to begin. You will choose category and payment first, then fill out the post details.',
-            'Before publishing, you can preview the draft and optionally add images or a booster/admin accent color.'
+            'Choose a post type below. You can preview before publishing and optionally add images or a booster/admin accent color.'
           ].join('\n')
         )
       )
       .addActionRowComponents(new ActionRowBuilder().addComponents(menu))
       .addSeparatorComponents(separator())
       .addTextDisplayComponents(
-        text(`${EMOJI_TEXT.report} Reports are private and go straight to the moderation team for review.`)
+        text(`${EMOJI_TEXT.report} Reports are private and reviewed by moderation.`)
       )
   ];
 }

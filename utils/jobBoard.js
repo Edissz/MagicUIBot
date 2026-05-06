@@ -6,7 +6,6 @@ const {
   ButtonStyle,
   ChannelType,
   ContainerBuilder,
-  LabelBuilder,
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
   MessageFlags,
@@ -30,7 +29,7 @@ const CONFIG = {
   reportChannelId: '1501563431218708570',
   staffRoleIds: ['1405207645618700349', '1324536259439362089'],
   colors: {
-    panel: 0x06072c,
+    panel: 0xf0abfc,
     forHire: 0x2dd4bf,
     hiring: 0x60a5fa,
     admin: 0xfacc15,
@@ -226,18 +225,6 @@ function separator(spacing = SeparatorSpacingSize.Small) {
   return new SeparatorBuilder().setDivider(true).setSpacing(spacing);
 }
 
-function labelText(label, description, input) {
-  const builder = new LabelBuilder().setLabel(label).setTextInputComponent(input);
-  if (description) builder.setDescription(description);
-  return builder;
-}
-
-function labelSelect(label, description, select) {
-  const builder = new LabelBuilder().setLabel(label).setStringSelectMenuComponent(select);
-  if (description) builder.setDescription(description);
-  return builder;
-}
-
 function optionLabel(options, value, fallback = 'Not specified') {
   return options.find(option => option.value === value)?.label || fallback;
 }
@@ -312,10 +299,11 @@ function buildJobPanelComponents() {
     new ContainerBuilder()
       .setAccentColor(CONFIG.colors.panel)
       .addTextDisplayComponents(
-        text(`# ${EMOJI_TEXT.hiring} MagicUI Job Board`),
+        text('# MagicUI Job Board'),
         text(
           [
             'A curated place for MagicUI members to find talent, offer services, and share real opportunities.',
+            `Post jobs channel: <#${CONFIG.jobPanelChannelId}>`,
             '',
             `${EMOJI_TEXT.forHire} **For Hire** - introduce your skills, portfolio, rates, and availability in <#${CONFIG.forHireChannelId}>.`,
             `${EMOJI_TEXT.hiring} **Hiring** - publish open roles, paid gigs, collaborations, or project briefs in <#${CONFIG.hiringChannelId}>.`,
@@ -634,35 +622,69 @@ function buildApplicationComponents(post, application) {
   ];
 }
 
-function buildJobPostModal(type) {
-  const meta = getTypeMeta(type);
-  const modal = new ModalBuilder().setCustomId(`job_post_modal_${type}`).setTitle(`Create ${meta.label} Post`);
-
-  const category = new StringSelectMenuBuilder()
-    .setCustomId('category')
-    .setPlaceholder('Choose the closest category')
-    .setRequired(true)
+function buildJobSetupComponents(draft) {
+  const meta = getTypeMeta(draft.type);
+  const categorySelect = new StringSelectMenuBuilder()
+    .setCustomId(`job_setup_category_${draft.id}`)
+    .setPlaceholder(draft.category ? `Category: ${categoryLabel(draft.category)}` : 'Choose the closest category')
     .addOptions(
       ...CATEGORY_OPTIONS.map(option =>
         new StringSelectMenuOptionBuilder()
           .setLabel(option.label)
           .setDescription(option.description)
           .setValue(option.value)
+          .setDefault(option.value === draft.category)
       )
     );
 
-  const payment = new StringSelectMenuBuilder()
-    .setCustomId('payment')
-    .setPlaceholder('Choose payment or compensation type')
-    .setRequired(true)
+  const paymentSelect = new StringSelectMenuBuilder()
+    .setCustomId(`job_setup_payment_${draft.id}`)
+    .setPlaceholder(draft.payment ? `Payment: ${paymentLabel(draft.payment)}` : 'Choose payment or compensation type')
     .addOptions(
       ...PAYMENT_OPTIONS.map(option =>
         new StringSelectMenuOptionBuilder()
           .setLabel(option.label)
           .setDescription(option.description)
           .setValue(option.value)
+          .setDefault(option.value === draft.payment)
       )
     );
+
+  return [
+    new ContainerBuilder()
+      .setAccentColor(CONFIG.colors.panel)
+      .addTextDisplayComponents(
+        text(`# Create ${meta.label} Post`),
+        text(
+          [
+            'Start with category and payment. After that, the bot will open the post details form.',
+            `Selected category: **${categoryLabel(draft.category)}**`,
+            `Selected payment: **${paymentLabel(draft.payment)}**`
+          ].join('\n')
+        )
+      )
+      .addSeparatorComponents(separator())
+      .addActionRowComponents(
+        new ActionRowBuilder().addComponents(categorySelect),
+        new ActionRowBuilder().addComponents(paymentSelect),
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`job_setup_details_${draft.id}`)
+            .setLabel('Continue')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(!draft.category || !draft.payment),
+          new ButtonBuilder()
+            .setCustomId(`job_draft_cancel_${draft.id}`)
+            .setLabel('Cancel')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      )
+  ];
+}
+
+function buildJobPostModal(draftId, type) {
+  const meta = getTypeMeta(type);
+  const modal = new ModalBuilder().setCustomId(`job_post_modal_${draftId}`).setTitle(`Create ${meta.label} Post`);
 
   const title = new TextInputBuilder()
     .setCustomId('title')
@@ -688,12 +710,10 @@ function buildJobPostModal(type) {
     .setRequired(true)
     .setMaxLength(300);
 
-  modal.addLabelComponents(
-    labelSelect('Category', 'Pick the closest work category.', category),
-    labelSelect('Payment / Compensation', 'Choose how payment or contribution works.', payment),
-    labelText('Post title', 'Short, specific titles perform best.', title),
-    labelText('Main description', 'Include scope, budget/rate, requirements, timeline, and links.', body),
-    labelText('Contact', 'Discord, email, portfolio, or application link.', contact)
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(title),
+    new ActionRowBuilder().addComponents(body),
+    new ActionRowBuilder().addComponents(contact)
   );
 
   return modal;
@@ -726,10 +746,10 @@ function buildJobMediaModal(draftId) {
     .setRequired(false)
     .setMaxLength(20);
 
-  modal.addLabelComponents(
-    labelText('Large image URL', 'Optional. Use a direct HTTPS image link.', largeImage),
-    labelText('Second image URL', 'Optional. Add one more supporting image.', image),
-    labelText('Accent color', 'Optional hex; boosters/admins only.', color)
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(largeImage),
+    new ActionRowBuilder().addComponents(image),
+    new ActionRowBuilder().addComponents(color)
   );
 
   return modal;
@@ -933,6 +953,7 @@ module.exports = {
   buildJobPanelComponents,
   buildJobMediaModal,
   buildJobPostModal,
+  buildJobSetupComponents,
   buildPostComponents,
   buildReportComponents,
   buildReportModal,

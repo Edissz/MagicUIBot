@@ -11,6 +11,7 @@ const {
   buildDraftPreviewComponents,
   buildJobMediaModal,
   buildJobPostModal,
+  buildJobSetupComponents,
   buildPostComponents,
   buildReportComponents,
   buildReportModal,
@@ -52,11 +53,6 @@ async function sendError(interaction, err) {
 
 function postIdFrom(customId, prefix) {
   return customId.slice(prefix.length);
-}
-
-function getModalSelectValue(interaction, customId, fallback) {
-  const values = interaction.fields.getStringSelectValues(customId);
-  return values[0] || fallback;
 }
 
 function getDraftStore(client) {
@@ -141,16 +137,15 @@ async function refreshCurrentReportCard(interaction, post) {
     .catch(() => null);
 }
 
-async function createJobDraft(interaction, client) {
-  const type = interaction.customId.replace('job_post_modal_', '');
+function createJobSetupDraft(interaction, client, type) {
   const draft = {
     id: createId('jd'),
     type,
-    category: getModalSelectValue(interaction, 'category', 'other'),
-    payment: getModalSelectValue(interaction, 'payment', 'negotiable'),
-    title: cleanTitle(interaction.fields.getTextInputValue('title')),
-    body: cleanText(interaction.fields.getTextInputValue('body'), 1800),
-    contact: cleanText(interaction.fields.getTextInputValue('contact'), 300),
+    category: null,
+    payment: null,
+    title: null,
+    body: null,
+    contact: null,
     largeImageUrl: null,
     imageUrl: null,
     accentColor: null,
@@ -160,6 +155,27 @@ async function createJobDraft(interaction, client) {
     authorTag: interaction.user.tag,
     createdAt: Date.now()
   };
+
+  getDraftStore(client).set(draft.id, draft);
+  return draft;
+}
+
+async function saveJobDraftDetails(interaction, client) {
+  const draftId = postIdFrom(interaction.customId, 'job_post_modal_');
+  const draft = getOwnedDraft(interaction, client, draftId);
+  if (!draft) {
+    return interaction.reply({
+      content: '<:cross:1430525603701850165> That draft expired or belongs to someone else. Please start again from the job board panel.',
+      ephemeral: true
+    });
+  }
+
+  Object.assign(draft, {
+    title: cleanTitle(interaction.fields.getTextInputValue('title')),
+    body: cleanText(interaction.fields.getTextInputValue('body'), 1800),
+    contact: cleanText(interaction.fields.getTextInputValue('contact'), 300),
+    updatedAt: Date.now()
+  });
 
   getDraftStore(client).set(draft.id, draft);
 
@@ -598,11 +614,72 @@ module.exports = {
       if (!interaction.guild) return;
 
       if (interaction.isStringSelectMenu() && interaction.customId === 'job_board_select') {
-        return await interaction.showModal(buildJobPostModal(interaction.values[0]));
+        const draft = createJobSetupDraft(interaction, client, interaction.values[0]);
+        return interaction.reply({
+          components: buildJobSetupComponents(draft),
+          flags: EPHEMERAL_V2_FLAGS,
+          allowedMentions: SILENT_MENTIONS
+        });
+      }
+
+      if (interaction.isStringSelectMenu() && interaction.customId.startsWith('job_setup_category_')) {
+        const draftId = postIdFrom(interaction.customId, 'job_setup_category_');
+        const draft = getOwnedDraft(interaction, client, draftId);
+        if (!draft) {
+          return interaction.reply({
+            content: '<:cross:1430525603701850165> That draft expired or belongs to someone else. Please start again from the job board panel.',
+            ephemeral: true
+          });
+        }
+        draft.category = interaction.values[0];
+        draft.updatedAt = Date.now();
+        getDraftStore(client).set(draft.id, draft);
+        return interaction.update({
+          components: buildJobSetupComponents(draft),
+          flags: V2_FLAGS,
+          allowedMentions: SILENT_MENTIONS
+        });
+      }
+
+      if (interaction.isStringSelectMenu() && interaction.customId.startsWith('job_setup_payment_')) {
+        const draftId = postIdFrom(interaction.customId, 'job_setup_payment_');
+        const draft = getOwnedDraft(interaction, client, draftId);
+        if (!draft) {
+          return interaction.reply({
+            content: '<:cross:1430525603701850165> That draft expired or belongs to someone else. Please start again from the job board panel.',
+            ephemeral: true
+          });
+        }
+        draft.payment = interaction.values[0];
+        draft.updatedAt = Date.now();
+        getDraftStore(client).set(draft.id, draft);
+        return interaction.update({
+          components: buildJobSetupComponents(draft),
+          flags: V2_FLAGS,
+          allowedMentions: SILENT_MENTIONS
+        });
+      }
+
+      if (interaction.isButton() && interaction.customId.startsWith('job_setup_details_')) {
+        const draftId = postIdFrom(interaction.customId, 'job_setup_details_');
+        const draft = getOwnedDraft(interaction, client, draftId);
+        if (!draft) {
+          return interaction.reply({
+            content: '<:cross:1430525603701850165> That draft expired or belongs to someone else. Please start again from the job board panel.',
+            ephemeral: true
+          });
+        }
+        if (!draft.category || !draft.payment) {
+          return interaction.reply({
+            content: '<:cross:1430525603701850165> Please choose both category and payment first.',
+            ephemeral: true
+          });
+        }
+        return await interaction.showModal(buildJobPostModal(draft.id, draft.type));
       }
 
       if (interaction.isModalSubmit() && interaction.customId.startsWith('job_post_modal_')) {
-        return await createJobDraft(interaction, client);
+        return await saveJobDraftDetails(interaction, client);
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_draft_media_')) {

@@ -1,87 +1,88 @@
-const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, PermissionsBitField } = require('discord.js');
+const { PermissionsBitField } = require('discord.js');
 const { addCase, getUser } = require('../utils/caseStore');
+const {
+  EMOJI_TEXT,
+  MODERATION_CONFIG,
+  SILENT_MENTIONS,
+  V2_FLAGS,
+  buildModerationLogComponents,
+  buildModerationNoticeComponents
+} = require('../utils/moderationV2');
 
 module.exports = {
   name: 'warn',
   async execute(message, args, client) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-      return message.reply('❌ You don’t have permission to use this command.');
+      return message.reply(`${EMOJI_TEXT.cross} You do not have permission to use this command.`);
     }
 
     const target = message.mentions.members.first();
-    if (!target) return message.reply('❌ Please mention a valid user.');
-    const why = args.slice(1).join(' ') || 'No reason provided.';
+    if (!target) return message.reply(`${EMOJI_TEXT.cross} Please mention a valid user.`);
 
+    const reason = args.slice(1).join(' ') || 'No reason provided.';
     const caseNum = addCase(message.guild.id, target.id, {
       type: 'warn',
       mod: message.author.id,
-      reason: why
+      reason
     });
 
-    // reply to mod confirmation
-    await message.reply(`✅ Warned **${target.user.tag}** | Case #${caseNum}`);
+    await target.send({
+      components: buildModerationNoticeComponents({ action: 'warn', caseNum, reason }),
+      flags: V2_FLAGS,
+      allowedMentions: SILENT_MENTIONS
+    }).catch(() => null);
 
-    // DM the user
-    const dmEmbed = new EmbedBuilder()
-      .setTitle('Punishment Notice')
-      .setColor('Red')
-      .setDescription(
-        `**Magic UI - You received a punishment from our moderation team.**\n\n` +
-        `*Please review the server rules and the details below:*\n\n` +
-        `> **Punishment:** Warn\n` +
-        `> **Case ID:** #${caseNum}\n` +
-        `> **Reason:** ${why}\n\n` +
-        `If you believe this was a mistake, open an appeal:\n` +
-        `https://discord.com/channels/1151315619246002176/1477251790713000088\n\n` +
-        `Magic UI Moderation Team.`
-      );
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('Appeal Here')
-        .setURL('https://discord.com/channels/1151315619246002176/1477251790713000088')
-        .setStyle(ButtonStyle.Link)
-    );
-
-    try { await target.send({ embeds: [dmEmbed], components: [row] }); } catch {}
-
-    // Log to modlogs
-    const log = client.channels.cache.get(client.modlogChannelId);
+    const log = client.channels.cache.get(MODERATION_CONFIG.modlogChannelId);
     if (log) {
-      const logEmbed = new EmbedBuilder()
-        .setTitle('Moderation Log')
-        .setColor('Red')
-        .setDescription(
-          `**Action:** Warn\n` +
-          `**User:** ${target.user.tag} (${target.id})\n` +
-          `**Moderator:** ${message.author.tag} (${message.author.id})\n` +
-          `**Reason:** ${why}\n` +
-          `**Case ID:** #${caseNum}\n` +
-          `**Date:** <t:${Math.floor(Date.now() / 1000)}:F>`
-        )
-        .setThumbnail(target.user.displayAvatarURL({ dynamic: true }))
-        .setFooter({ text: 'Magic UI Moderation System' });
-      await log.send({ embeds: [logEmbed] });
+      await log.send({
+        components: buildModerationLogComponents({
+          action: 'warn',
+          userTag: target.user.tag,
+          userId: target.id,
+          moderatorTag: message.author.tag,
+          moderatorId: message.author.id,
+          reason,
+          caseNum
+        }),
+        flags: V2_FLAGS,
+        allowedMentions: SILENT_MENTIONS
+      });
     }
 
-    // Auto-timeout after 3 warns
     const info = getUser(message.guild.id, target.id);
-    const warnCount = info.cases.filter(c => c.type === 'warn').length;
+    const warnCount = info.cases.filter(item => item.type === 'warn').length;
     if (warnCount >= 3) {
       const hours = 6;
-      await target.timeout(hours * 60 * 60 * 1000, 'Auto-timeout: 3 warns').catch(() => null);
-      const autoEmbed = new EmbedBuilder()
-        .setTitle('Punishment Notice')
-        .setColor('Red')
-        .setDescription(
-          `**Magic UI - You received a punishment from our moderation team.**\n\n` +
-          `> **Punishment:** Timeout (${hours}h)\n` +
-          `> **Reason:** Accumulated 3 warns\n\n` +
-          `Appeal:\nhttps://discord.com/channels/1151315619246002176/1477251790713000088\n` +
-          `Magic UI Moderation Team.`
-        );
-      try { await target.send({ embeds: [autoEmbed], components: [row] }); } catch {}
-      await log.send({ embeds: [autoEmbed] });
+      const timeoutReason = 'Auto-timeout: 3 warnings';
+      await target.timeout(hours * 60 * 60 * 1000, timeoutReason).catch(() => null);
+
+      await target.send({
+        components: buildModerationNoticeComponents({
+          action: 'timeout',
+          reason: 'Accumulated 3 warnings',
+          duration: `${hours}h`
+        }),
+        flags: V2_FLAGS,
+        allowedMentions: SILENT_MENTIONS
+      }).catch(() => null);
+
+      if (log) {
+        await log.send({
+          components: buildModerationLogComponents({
+            action: 'timeout',
+            userTag: target.user.tag,
+            userId: target.id,
+            moderatorTag: 'Magic UI Automation',
+            moderatorId: client.user.id,
+            reason: timeoutReason,
+            duration: `${hours}h`
+          }),
+          flags: V2_FLAGS,
+          allowedMentions: SILENT_MENTIONS
+        });
+      }
     }
-  },
+
+    return message.reply(`${EMOJI_TEXT.check} Warned ${target.user.tag} | Case #${caseNum}`);
+  }
 };

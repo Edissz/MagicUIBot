@@ -1,20 +1,21 @@
-const { SUPPORT_CONFIG } = require('../utils/supportSystem');
+const { SUPPORT_PANEL_CHANNEL_ID } = require('../utils/supportV2');
 
-async function upsertSlashCommands(client) {
+async function syncSlashCommands(client) {
   const slashCommands = [...client.commands.values()]
     .filter(command => command.data)
     .map(command => command.data.toJSON());
 
   if (!slashCommands.length) return;
 
-  const guild = await client.guilds.fetch(SUPPORT_CONFIG.guildId).catch(() => null);
-  const commandManager = guild?.commands || client.application.commands;
-  const existingCommands = await commandManager.fetch();
+  const guildId = process.env.GUILD_ID || '1151315619246002176';
+  const guild = await client.guilds.fetch(guildId).catch(() => null);
+  const manager = guild?.commands || client.application.commands;
+  const existing = await manager.fetch();
 
   for (const commandData of slashCommands) {
-    const existing = existingCommands.find(command => command.name === commandData.name);
-    if (existing) await commandManager.edit(existing.id, commandData);
-    else await commandManager.create(commandData);
+    const current = existing.find(command => command.name === commandData.name);
+    if (current) await manager.edit(current.id, commandData);
+    else await manager.create(commandData);
   }
 }
 
@@ -25,8 +26,8 @@ module.exports = {
     console.log(`Ready as ${client.user.tag}`);
 
     try {
-      await upsertSlashCommands(client);
-      console.log('Slash commands synced.');
+      await syncSlashCommands(client);
+      console.log(`Slash commands synced. Support panel channel: ${SUPPORT_PANEL_CHANNEL_ID}`);
     } catch (err) {
       console.error('Failed to sync slash commands:', err);
     }

@@ -1,5 +1,10 @@
 const { PermissionsBitField } = require('discord.js');
-const { sendSupportPanel } = require('../utils/supportSystem');
+const {
+  SILENT_MENTIONS,
+  SUPPORT_PANEL_CHANNEL_ID,
+  V2_FLAGS,
+  buildSupportPanelComponents
+} = require('../utils/supportV2');
 
 const PANEL_COOLDOWN_MS = 30000;
 
@@ -10,19 +15,24 @@ module.exports = {
       return message.reply('<:cross:1430525603701850165> You lack permission.');
     }
 
-    if (!client.__panelCooldown) client.__panelCooldown = new Map();
-    const last = client.__panelCooldown.get(message.guild.id) || 0;
-    if (Date.now() - last < PANEL_COOLDOWN_MS) {
-      return message.reply('<:cross:1430525603701850165> Please wait before sending another support panel.');
+    const targetChannel = await message.guild.channels.fetch(SUPPORT_PANEL_CHANNEL_ID).catch(() => null);
+    if (!targetChannel || !targetChannel.isTextBased()) {
+      return message.reply('<:cross:1430525603701850165> I could not find the support panel channel.');
     }
-    client.__panelCooldown.set(message.guild.id, Date.now());
 
-    try {
-      const panel = await sendSupportPanel(message.guild);
-      return message.reply(`<:check:1430525546608988203> V2 support panel posted in ${panel.channel}.`);
-    } catch (err) {
-      console.error('Failed to post support panel:', err);
-      return message.reply('<:cross:1430525603701850165> I could not post the support panel. Please check the configured channel.');
+    if (!client.__panelCooldown) client.__panelCooldown = new Map();
+    const last = client.__panelCooldown.get(targetChannel.id) || 0;
+    if (Date.now() - last < PANEL_COOLDOWN_MS) {
+      return message.reply('<:cross:1430525603701850165> Please wait before sending another panel.');
     }
+    client.__panelCooldown.set(targetChannel.id, Date.now());
+
+    await targetChannel.send({
+      components: buildSupportPanelComponents(),
+      flags: V2_FLAGS,
+      allowedMentions: SILENT_MENTIONS
+    });
+
+    return message.reply(`<:check:1430525546608988203> Ticket panel posted in ${targetChannel}.`);
   }
 };

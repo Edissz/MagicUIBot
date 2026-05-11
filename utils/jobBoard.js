@@ -24,7 +24,7 @@ const CONFIG = {
   guildId: '1151315619246002176',
   jobPanelChannelId: '1501531376581742622',
   forHireChannelId: '1501531243395809440',
-  hiringChannelId: '1501531376581742622',
+  hiringChannelId: '1501531310760657018',
   adminChannelId: '1501536845794775060',
   reportChannelId: '1501563431218708570',
   staffRoleIds: ['1405207645618700349', '1324536259439362089'],
@@ -388,7 +388,7 @@ function buildPostComponents(post) {
   const reviews = Array.isArray(post.reviews) ? post.reviews : [];
   const applications = Array.isArray(post.applications) ? post.applications : [];
   const verified = post.verified
-    ? `${EMOJI_TEXT.verified} **Verified opportunity**${post.verifiedBy ? ` by <@${post.verifiedBy}>` : ''}`
+    ? `${EMOJI_TEXT.verified} **Verified by staff**`
     : 'Staff verification pending';
   const latestReview = reviews.length ? reviews[reviews.length - 1] : null;
   const applyLine = post.type === 'hiring' ? `Applications: ${applications.length}` : null;

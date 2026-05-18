@@ -8,7 +8,11 @@ const { getRoleSnapshot } = require('../utils/memberRoleStore');
 
 module.exports = {
   name: 'guildMemberAdd',
-  async execute(member) {
+  async execute(member, client) {
+    if (!client.__recentJoins) client.__recentJoins = new Map();
+    client.__recentJoins.set(`${member.guild.id}:${member.id}`, Date.now());
+    setTimeout(() => client.__recentJoins.delete(`${member.guild.id}:${member.id}`), 15 * 60 * 1000);
+
     await new Promise(res => setTimeout(res, 2000));
 
     try {

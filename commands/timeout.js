@@ -1,25 +1,69 @@
-const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, PermissionsBitField } = require('discord.js');
+const { PermissionsBitField } = require('discord.js');
 const { addCase } = require('../utils/caseStore');
+const {
+  SILENT_MENTIONS,
+  V2_FLAGS,
+  buildModerationLogComponents,
+  buildTimeoutNoticeComponents
+} = require('../utils/supportV2');
 
 module.exports = {
   name: 'timeout',
   async execute(message, args, client) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) return message.reply('❌ No permission.');
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+      return message.reply('<:cross:1430525603701850165> You do not have permission to use this command.');
+    }
+
     const target = message.mentions.members.first();
-    if (!target) return message.reply('❌ Mention a user.');
+    if (!target) return message.reply('<:cross:1430525603701850165> Mention a user.');
+
     const minutes = Number(args[1]) || 10;
-    const reason = args.slice(2).join(' ') || 'No reason provided';
-    try { await target.timeout(minutes * 60 * 1000, reason); } catch { return message.reply('❌ Failed to timeout.'); }
-    const caseNum = addCase(message.guild.id, target.id, { type: 'timeout', mod: message.author.id, reason, minutes });
-    const embed = new EmbedBuilder()
-      .setTitle('Punishment Notice')
-      .setDescription(`**<:64363463446:1421844300043387050> Magic UI - You received a punishment from our moderation team.**\n\n> **Punishment**: Timeout (${minutes}m)\n> **Case ID**: #${caseNum}\n> **Reason**: ${reason}\n\nAppeal:\nhttps://discord.com/channels/1151315619246002176/1477251790713000088\nMagic UI Moderation Team.`)
-      .setColor('Red');
-    const btn = new ButtonBuilder().setLabel('Appeal Here').setURL('https://discord.com/channels/1151315619246002176/1477251790713000088').setStyle(ButtonStyle.Link);
-    const row = new ActionRowBuilder().addComponents(btn);
-    try { await target.send({ embeds: [embed], components: [row] }); } catch {}
+    const reason = args.slice(2).join(' ') || 'No reason provided.';
+
+    try {
+      await target.timeout(minutes * 60 * 1000, reason);
+    } catch {
+      return message.reply('<:cross:1430525603701850165> Failed to timeout user. I may be missing permissions or role hierarchy.');
+    }
+
+    const caseNum = addCase(message.guild.id, target.id, {
+      type: 'timeout',
+      mod: message.author.id,
+      reason,
+      minutes
+    });
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    try {
+      await target.send({
+        components: buildTimeoutNoticeComponents({
+          caseId: caseNum,
+          reason,
+          moderatorTag: message.author.tag,
+          minutes,
+          timestamp
+        }),
+        flags: V2_FLAGS,
+        allowedMentions: SILENT_MENTIONS
+      });
+    } catch {}
+
     const log = client.channels.cache.get(client.modlogChannelId);
-    if (log) log.send({ embeds: [embed] });
-    await message.reply(`✅ Timed out ${target.user.tag} for ${minutes}m | Case #${caseNum}`);
+    if (log) {
+      await log.send({
+        components: buildModerationLogComponents({
+          action: `Timeout (${minutes}m)`,
+          member: target,
+          moderator: message.author,
+          reason,
+          caseId: caseNum,
+          color: 0xfaa61a
+        }),
+        flags: V2_FLAGS,
+        allowedMentions: SILENT_MENTIONS
+      });
+    }
+
+    return message.reply(`<:check:1430525546608988203> Timed out ${target.user.tag} for ${minutes}m | Case #${caseNum}`);
   }
 };

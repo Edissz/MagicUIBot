@@ -14,15 +14,20 @@ const {
   TextDisplayBuilder
 } = require('discord.js');
 
+const GUILD_ID = '1151315619246002176';
 const SUPPORT_PANEL_CHANNEL_ID = '1477251790713000088';
 const SUPPORT_CATEGORY_ID = '1502554201916706826';
 const SUPPORT_MODLOG_ID = '1355260778965373000';
+const VERIFIED_ROLE_ID = '1505968642452492509';
 const STAFF_ROLE_IDS = ['1405207645618700349', '1324536259439362089'];
+const ROLE_RESTORE_EXCLUDED_ROLE_IDS = [...STAFF_ROLE_IDS];
+
 const SUPPORT_IMAGE_URL = 'https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif?ex=68fa1f29&is=68f8cda9&hm=06e75e6659eff21a4e1cd2f3d4073b241c9e5e661ea85fdda42b6f8592ce0164';
 const WELCOME_IMAGE_URL = 'https://magicui.design/og';
 const MAGIC_UI_URL = 'https://magicui.design/';
 const SUPPORT_URL = 'https://discord.com/channels/1151315619246002176/1477251790713000088';
 const RULES_URL = 'https://discord.com/channels/1151315619246002176/1151318734158446623';
+const SUPPORT_BOT_MENTION = '<@1430212769973670092>';
 
 const V2_FLAGS = MessageFlags.IsComponentsV2;
 const EPHEMERAL_V2_FLAGS = MessageFlags.Ephemeral | MessageFlags.IsComponentsV2;
@@ -38,7 +43,9 @@ const EMOJIS = {
   general: { id: '1421844303474462720', name: 'techouse214' },
   report: { id: '1421844300043387050', name: 'techouse215' },
   order: { id: '1421844296537083994', name: 'techouse216' },
-  brand: { id: '1346947141570007060', name: '166878038' }
+  brand: { id: '1346947141570007060', name: 'MagicUI' },
+  star: { id: '1501563855539535882', name: 'starbulkrounded' },
+  mail: { id: '1501564351763710137', name: 'mailaccount02bulkrounded' }
 };
 
 const EMOJI_TEXT = {
@@ -51,7 +58,9 @@ const EMOJI_TEXT = {
   general: '<:techouse214:1421844303474462720>',
   report: '<:techouse215:1421844300043387050>',
   order: '<:techouse216:1421844296537083994>',
-  brand: '<:166878038:1346947141570007060>'
+  brand: '<:MagicUI:1346947141570007060>',
+  star: '<:starbulkrounded:1501563855539535882>',
+  mail: '<:mailaccount02bulkrounded:1501564351763710137>'
 };
 
 const SUPPORT_REASONS = {
@@ -73,11 +82,11 @@ const SUPPORT_REASONS = {
     emojiText: EMOJI_TEXT.general,
     description: 'Setup, installation, access, or technical support issues.'
   },
-  general: {
-    label: 'General Support',
-    emoji: EMOJIS.general,
-    emojiText: EMOJI_TEXT.general,
-    description: 'Questions that do not fit the other support reasons.'
+  appeal: {
+    label: 'Moderation Appeal',
+    emoji: EMOJIS.rules,
+    emojiText: EMOJI_TEXT.rules,
+    description: 'Ask about a warning, timeout, removed content, or appeal.'
   },
   rule: {
     label: 'Rule Violation',
@@ -90,19 +99,41 @@ const SUPPORT_REASONS = {
     emoji: EMOJIS.order,
     emojiText: EMOJI_TEXT.order,
     description: 'Product delivery, purchase access, or order problems.'
+  },
+  general: {
+    label: 'General Support',
+    emoji: EMOJIS.general,
+    emojiText: EMOJI_TEXT.general,
+    description: 'Questions that do not fit the other support reasons.'
   }
 };
 
 function text(content) {
-  return new TextDisplayBuilder().setContent(content);
+  return new TextDisplayBuilder().setContent(String(content).slice(0, 4000));
 }
 
 function separator(spacing = SeparatorSpacingSize.Small) {
   return new SeparatorBuilder().setDivider(true).setSpacing(spacing);
 }
 
+function buttonRow(buttons) {
+  return new ActionRowBuilder().addComponents(...buttons);
+}
+
 function supportReason(type) {
   return SUPPORT_REASONS[type] || SUPPORT_REASONS.general;
+}
+
+function safe(value, fallback = 'Not provided') {
+  const trimmed = String(value || '').trim();
+  return trimmed || fallback;
+}
+
+function limitedLines(lines, max = 12) {
+  if (!lines.length) return 'None';
+  const visible = lines.slice(0, max);
+  const hidden = lines.length - visible.length;
+  return `${visible.join('\n')}${hidden > 0 ? `\n...and ${hidden} more` : ''}`;
 }
 
 function supportSelect() {
@@ -120,8 +151,12 @@ function supportSelect() {
     );
 }
 
-function buttonRow(buttons) {
-  return new ActionRowBuilder().addComponents(...buttons);
+function supportButton(label = 'Open Support') {
+  return new ButtonBuilder()
+    .setLabel(label)
+    .setURL(SUPPORT_URL)
+    .setStyle(ButtonStyle.Link)
+    .setEmoji(EMOJIS.support);
 }
 
 function buildSupportPanelComponents() {
@@ -129,8 +164,8 @@ function buildSupportPanelComponents() {
     new ContainerBuilder()
       .setAccentColor(0x06072c)
       .addTextDisplayComponents(
-        text(`# ${EMOJI_TEXT.support} Welcome to MagicUI Support`),
-        text('Welcome to the official Magic UI support desk. We are here to assist with design, code, billing, access, and technical problems related to Magic UI. Please choose the correct support reason below so the team can route your request properly and avoid unnecessary delays.')
+        text(`# ${EMOJI_TEXT.support} Welcome to Magic UI Support`),
+        text('Welcome to the official Magic UI support desk. Choose the closest reason below so the team can route your request quickly and keep your transcript useful.')
       )
       .addMediaGalleryComponents(
         new MediaGalleryBuilder().addItems(
@@ -143,22 +178,23 @@ function buildSupportPanelComponents() {
       .addTextDisplayComponents(
         text(
           [
-            '### Rules & When To Open A Ticket',
-            'Please read this before opening a ticket. Misuse of the support system may result in warnings or ticket restrictions.',
+            '### Before Opening A Ticket',
+            'Use tickets for billing, product access, technical issues, moderation questions, reports, and urgent account concerns.',
             '',
-            `${EMOJI_TEXT.payment} Payment or billing issues`,
+            `${EMOJI_TEXT.payment} Payment, billing, refunds, or receipts`,
             `${EMOJI_TEXT.bug} Bug reports or broken components`,
             `${EMOJI_TEXT.general} Setup, installation, access, or general support`,
-            `${EMOJI_TEXT.report} Rule violation or member reports`,
-            `${EMOJI_TEXT.order} Order, license, or product issues`,
+            `${EMOJI_TEXT.rules} Warning, timeout, removed content, or appeal questions`,
+            `${EMOJI_TEXT.report} Rule violations, member reports, or unsafe behavior`,
+            `${EMOJI_TEXT.order} Order, license, or product access issues`,
             '',
-            'Do not open tickets for spam, repeated requests without new information, or feature suggestions that belong in the feedback channel.'
+            'Please include screenshots, links, account details, and steps already tried when the form asks for them.'
           ].join('\n')
         )
       )
       .addSeparatorComponents(separator())
       .addTextDisplayComponents(
-        text('### Open A Ticket\nSelect the closest reason from the menu below. The bot will ask for details and create a private ticket in the Magic UI support category.')
+        text('### Open A Ticket\nSelect a reason from the menu. The bot will ask for details and create a private channel in the Magic UI support category.')
       )
       .addActionRowComponents(new ActionRowBuilder().addComponents(supportSelect()))
   ];
@@ -176,8 +212,9 @@ function buildSupportMenuComponents() {
   ];
 }
 
-function buildTicketOpenedComponents({ user, type, issueDetails, stepsTaken, extraNotes }) {
+function buildTicketOpenedComponents({ user, type, issueDetails, stepsTaken, extraNotes, createdAt = Date.now() }) {
   const reason = supportReason(type);
+  const timestamp = Math.floor(createdAt / 1000);
 
   return [
     new ContainerBuilder()
@@ -188,17 +225,18 @@ function buildTicketOpenedComponents({ user, type, issueDetails, stepsTaken, ext
           [
             `${user} opened a **${reason.label}** ticket.`,
             '',
-            `Staff: ${STAFF_ROLE_IDS.map(roleId => `<@&${roleId}>`).join(' ')}`,
+            `**Opened:** <t:${timestamp}:F>`,
+            `**Staff:** ${STAFF_ROLE_IDS.map(roleId => `<@&${roleId}>`).join(' ')}`,
             '',
-            'A staff member will review the information below. Please keep all related updates, screenshots, links, and follow-up context in this channel so the transcript stays useful.'
+            'A staff member will review the form below. Keep screenshots, links, and follow-up context in this channel so the transcript stays useful.'
           ].join('\n')
         )
       )
       .addSeparatorComponents(separator(SeparatorSpacingSize.Large))
       .addTextDisplayComponents(
-        text(`### Issue Details\n${issueDetails}`),
-        text(`### Steps Already Tried\n${stepsTaken}`),
-        text(`### Additional Notes\n${extraNotes || 'N/A'}`)
+        text(`### Issue Details\n${safe(issueDetails)}`),
+        text(`### Steps Already Tried\n${safe(stepsTaken)}`),
+        text(`### Additional Notes\n${safe(extraNotes, 'N/A')}`)
       )
       .addMediaGalleryComponents(
         new MediaGalleryBuilder().addItems(
@@ -211,17 +249,27 @@ function buildTicketOpenedComponents({ user, type, issueDetails, stepsTaken, ext
         buttonRow([
           new ButtonBuilder()
             .setCustomId('ticket_claim')
-            .setLabel('Claim Ticket')
+            .setLabel('Claim')
             .setStyle(ButtonStyle.Primary)
             .setEmoji(EMOJIS.check),
           new ButtonBuilder()
+            .setCustomId('ticket_resolve')
+            .setLabel('Resolve')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji(EMOJIS.check),
+          new ButtonBuilder()
             .setCustomId('ticket_hold')
-            .setLabel('Put On Hold')
+            .setLabel('Hold')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji(EMOJIS.general),
           new ButtonBuilder()
+            .setCustomId('ticket_transcript')
+            .setLabel('Transcript')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji(EMOJIS.support),
+          new ButtonBuilder()
             .setCustomId('ticket_close')
-            .setLabel('Close Ticket')
+            .setLabel('Close')
             .setStyle(ButtonStyle.Danger)
             .setEmoji(EMOJIS.cross)
         ])
@@ -250,7 +298,8 @@ function buildCloseConfirmComponents() {
           new ButtonBuilder()
             .setCustomId('ticket_close_confirm')
             .setLabel('Confirm Close')
-            .setStyle(ButtonStyle.Danger),
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji(EMOJIS.cross),
           new ButtonBuilder()
             .setCustomId('ticket_close_cancel')
             .setLabel('Cancel')
@@ -274,24 +323,27 @@ function buildLogComponents(title, body, color = 0x2b2d31, transcriptName = null
   return [container];
 }
 
-function buildWelcomeComponents() {
+function buildWelcomeComponents(user) {
+  const userLabel = user ? `${user}` : '{user}';
+
   return [
     new ContainerBuilder()
       .setAccentColor(0xffffff)
       .addTextDisplayComponents(
-        text(`# Welcome to ${EMOJI_TEXT.brand} Magic UI`),
+        text(`# Welcome to ${EMOJI_TEXT.brand} Magic UI, ${userLabel}`),
         text(
           [
-            'Start exploring with these key channels:',
+            '**Design Engineer Community**',
             '',
-            '- Rules & FAQs: https://discord.com/channels/1151315619246002176/1151318734158446623',
-            '- FAQs: https://discord.com/channels/1151315619246002176/1383896107012063333',
-            '- New Components & Releases: https://discord.com/channels/1151315619246002176/1151315620013551751',
-            '- Showcase: https://discord.com/channels/1151315619246002176/1362409572165226596',
-            '- Talk with others: https://discord.com/channels/1151315619246002176/1151315620013551755',
-            '- Feedback: https://discord.com/channels/1151315619246002176/1426517448353517671',
+            `${EMOJI_TEXT.star} Start exploring with these key channels:`,
             '',
-            `${EMOJI_TEXT.rules} Need help? Jump to the support channel or use /support in the server.`
+            '> * **Rules & FAQs:** https://discord.com/channels/1151315619246002176/1151318734158446623',
+            '> * **New Components & Releases:** https://discord.com/channels/1151315619246002176/1151315620013551751',
+            '> * **Showcase:** https://discord.com/channels/1151315619246002176/1362409572165226596',
+            '> * **Talk with Others:** https://discord.com/channels/1151315619246002176/1151315620013551755',
+            '> * **Job Board:** https://discord.com/channels/1151315619246002176/1501531376581742622',
+            '',
+            `${EMOJI_TEXT.mail} Need help? Jump into the server and use the \`/support\` command with the official ${SUPPORT_BOT_MENTION} bot.`
           ].join('\n')
         )
       )
@@ -305,15 +357,11 @@ function buildWelcomeComponents() {
       .addActionRowComponents(
         buttonRow([
           new ButtonBuilder()
-            .setLabel('Visit MagicUI')
+            .setLabel('Visit Magic UI')
             .setURL(MAGIC_UI_URL)
             .setStyle(ButtonStyle.Link)
             .setEmoji(EMOJIS.brand),
-          new ButtonBuilder()
-            .setLabel('Support')
-            .setURL(SUPPORT_URL)
-            .setStyle(ButtonStyle.Link)
-            .setEmoji(EMOJIS.support),
+          supportButton('Support'),
           new ButtonBuilder()
             .setLabel('Rules')
             .setURL(RULES_URL)
@@ -324,22 +372,341 @@ function buildWelcomeComponents() {
   ];
 }
 
+function buildRoleUpdateComponents({ addedRoles = [], removedRoles = [], guildName = 'Magic UI' }) {
+  const added = limitedLines(addedRoles.map(role => `+ ${role.name}`));
+  const removed = limitedLines(removedRoles.map(role => `- ${role.name}`));
+
+  return [
+    new ContainerBuilder()
+      .setAccentColor(0x5865f2)
+      .addTextDisplayComponents(
+        text(`# ${EMOJI_TEXT.star} Role Update Notification`),
+        text(
+          [
+            `Your roles in **${guildName}** were updated.`,
+            '',
+            '### Added Roles',
+            added,
+            '',
+            '### Removed Roles',
+            removed,
+            '',
+            'If this looks unexpected, use `/support` in the server and the Magic UI team can review it.'
+          ].join('\n')
+        )
+      )
+      .addActionRowComponents(buttonRow([supportButton('Get Help')]))
+  ];
+}
+
+function buildRoleLogComponents({ member, addedRoles = [], removedRoles = [] }) {
+  const added = limitedLines(addedRoles.map(role => `+ <@&${role.id}> (${role.id})`));
+  const removed = limitedLines(removedRoles.map(role => `- <@&${role.id}> (${role.id})`));
+
+  return buildLogComponents(
+    `${EMOJI_TEXT.star} Role Change Log`,
+    [
+      `User: ${member.user.tag} (${member.id})`,
+      `Time: <t:${Math.floor(Date.now() / 1000)}:F>`,
+      '',
+      'Added Roles:',
+      added,
+      '',
+      'Removed Roles:',
+      removed
+    ].join('\n'),
+    0x5865f2
+  );
+}
+
+function buildRoleRestoreOfferComponents({ guildId, savedAt, roleNames = [] }) {
+  const savedTimestamp = Math.floor(new Date(savedAt).getTime() / 1000);
+  const roles = limitedLines(roleNames.map(name => `- ${name}`), 16);
+
+  return [
+    new ContainerBuilder()
+      .setAccentColor(0x22c55e)
+      .addTextDisplayComponents(
+        text(`# ${EMOJI_TEXT.check} Restore Previous Roles?`),
+        text(
+          [
+            'Welcome back to Magic UI. I found a saved role snapshot from your previous server membership.',
+            '',
+            `**Saved:** <t:${savedTimestamp}:F>`,
+            '',
+            '### Restorable Roles',
+            roles,
+            '',
+            'Only non-staff, non-admin roles that still exist and can be safely managed by the bot will be restored.'
+          ].join('\n')
+        )
+      )
+      .addActionRowComponents(
+        buttonRow([
+          new ButtonBuilder()
+            .setCustomId(`role_restore_accept_${guildId}`)
+            .setLabel('Yes, restore roles')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji(EMOJIS.check),
+          new ButtonBuilder()
+            .setCustomId(`role_restore_decline_${guildId}`)
+            .setLabel('No, thanks')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji(EMOJIS.cross)
+        ])
+      )
+  ];
+}
+
+function buildRoleRestoreResultComponents(title, body, color = 0x22c55e) {
+  return buildNoticeComponents(title, body, color);
+}
+
+function buildBanNoticeComponents({ caseId, reason, moderatorTag, timestamp = Math.floor(Date.now() / 1000) }) {
+  return [
+    new ContainerBuilder()
+      .setAccentColor(0xef4444)
+      .addTextDisplayComponents(
+        text('# Ban Notice'),
+        text(
+          [
+            'You have been banned from Magic UI.',
+            '',
+            `**Action:** Ban`,
+            `**Case ID:** #${caseId}`,
+            `**Reason:** ${safe(reason)}`,
+            `**Issued by:** ${safe(moderatorTag)}`,
+            `**Date:** <t:${timestamp}:F>`
+          ].join('\n')
+        )
+      )
+      .addSeparatorComponents(separator(SeparatorSpacingSize.Large))
+      .addTextDisplayComponents(
+        text(
+          [
+            '### Why bans happen',
+            'This server follows Discord Community Guidelines and Magic UI policies. A ban may occur for any of the following:',
+            '',
+            '**Conduct**',
+            '- Hate speech, harassment, discrimination, threats, or targeted abuse',
+            '- Trolling, baiting, toxic behavior, or starting or dragging drama',
+            '- Spamming, flooding, mass mentions, repeated disruptions',
+            '- Ignoring moderator instructions or arguing moderation decisions',
+            '- Misusing channels or repeatedly going off-topic'
+          ].join('\n')
+        ),
+        text(
+          [
+            '**Content standards**',
+            '- Posting NSFW, offensive, violent, or unsafe content',
+            '- Sharing misleading content, impersonation, or false claims',
+            '- Failing to credit creators or misrepresenting AI-assisted work',
+            '',
+            '**Originality & licensing**',
+            '- Plagiarism or copying designs, code, or assets without permission',
+            '- Violating software or content licenses or removing required attribution'
+          ].join('\n')
+        ),
+        text(
+          [
+            '**Promotion & advertising**',
+            '- Posting invite, referral, or affiliate links',
+            '- Unapproved paid promotions',
+            '- Unsolicited advertising or private promotions, including DMs',
+            '',
+            '**Privacy & safety**',
+            '- Sharing personal, private, or sensitive information',
+            '- Phishing, scams, malware, or malicious or unsafe links',
+            '- Attempts to compromise accounts, services, or security'
+          ].join('\n')
+        )
+      )
+      .addSeparatorComponents(separator())
+      .addTextDisplayComponents(
+        text(
+          [
+            '### Appeal status',
+            'Appeals are not available for this ban.',
+            'Do not attempt to bypass this action using alternate accounts or by contacting staff privately.',
+            '',
+            'Magic UI Moderation Team'
+          ].join('\n')
+        )
+      )
+  ];
+}
+
+function buildWarningNoticeComponents({ caseId, reason, moderatorTag, timestamp = Math.floor(Date.now() / 1000) }) {
+  return [
+    new ContainerBuilder()
+      .setAccentColor(0xfaa61a)
+      .addTextDisplayComponents(
+        text('# Moderation Notice'),
+        text(
+          [
+            'Hi there, just a quick heads-up from the Magic UI moderation team.',
+            '',
+            `**Action:** Warning`,
+            `**Case ID:** #${caseId}`,
+            `**Reason:** ${safe(reason)}`,
+            `**Issued by:** ${safe(moderatorTag)}`,
+            `**Date:** <t:${timestamp}:F>`
+          ].join('\n')
+        )
+      )
+      .addSeparatorComponents(separator(SeparatorSpacingSize.Large))
+      .addTextDisplayComponents(
+        text(
+          [
+            '### You may have been warned for things like:',
+            '- Harassment, insults, or targeted negativity',
+            '- Spamming, flooding, or disruptive messages',
+            '- Posting prohibited content or suspicious links',
+            '- Ignoring staff instructions or community rules',
+            '',
+            'If this was a misunderstanding, no stress. Please take a moment to review the rules and adjust going forward.',
+            '',
+            'We also ask that you follow Discord Community Guidelines and keep the space respectful for everyone.',
+            '',
+            `If you believe this action was taken in error, submit an appeal by using \`/support\` with the official ${SUPPORT_BOT_MENTION} bot.`,
+            '',
+            'Thanks for understanding,',
+            'Magic UI Moderation Team'
+          ].join('\n')
+        )
+      )
+      .addActionRowComponents(buttonRow([supportButton('Support')]))
+  ];
+}
+
+function buildTimeoutNoticeComponents({ caseId, reason, moderatorTag, minutes, timestamp = Math.floor(Date.now() / 1000) }) {
+  return [
+    new ContainerBuilder()
+      .setAccentColor(0xfaa61a)
+      .addTextDisplayComponents(
+        text('# Moderation Notice'),
+        text(
+          [
+            'A temporary timeout has been applied in Magic UI.',
+            '',
+            `**Action:** Timeout (${minutes}m)`,
+            `**Case ID:** #${caseId}`,
+            `**Reason:** ${safe(reason)}`,
+            `**Issued by:** ${safe(moderatorTag)}`,
+            `**Date:** <t:${timestamp}:F>`,
+            '',
+            `If you believe this action was taken in error, use \`/support\` with the official ${SUPPORT_BOT_MENTION} bot.`
+          ].join('\n')
+        )
+      )
+      .addActionRowComponents(buttonRow([supportButton('Support')]))
+  ];
+}
+
+function buildModerationLogComponents({ action, member, user, moderator, reason, caseId, color = 0xef4444 }) {
+  const target = member?.user || user;
+  return buildLogComponents(
+    `${EMOJI_TEXT.report} Moderation Log`,
+    [
+      `Action: ${action}`,
+      `User: ${target?.tag || 'Unknown'} (${target?.id || member?.id || 'Unknown'})`,
+      `Moderator: ${moderator.tag} (${moderator.id})`,
+      `Reason: ${safe(reason)}`,
+      `Case ID: #${caseId}`,
+      `Date: <t:${Math.floor(Date.now() / 1000)}:F>`
+    ].join('\n'),
+    color
+  );
+}
+
+function buildVerificationWelcomeComponents(guildId = GUILD_ID) {
+  return [
+    new ContainerBuilder()
+      .setAccentColor(0x22c55e)
+      .addTextDisplayComponents(
+        text(`# ${EMOJI_TEXT.check} Verify Your Magic UI Account`),
+        text(
+          [
+            'Welcome to Magic UI. Before chatting, please complete a quick verification check.',
+            '',
+            'This helps reduce spam accounts, compromised accounts, mass mentions, and unsafe links.',
+            '',
+            'Select the button below, then type the CAPTCHA word shown in the form.'
+          ].join('\n')
+        )
+      )
+      .addActionRowComponents(
+        buttonRow([
+          new ButtonBuilder()
+            .setCustomId(`verify_start_${guildId}`)
+            .setLabel('Start Verification')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji(EMOJIS.check)
+        ])
+      )
+  ];
+}
+
+function buildUnverifiedPromptComponents(user, guildId = GUILD_ID) {
+  return [
+    new ContainerBuilder()
+      .setAccentColor(0xfaa61a)
+      .addTextDisplayComponents(
+        text(`# ${EMOJI_TEXT.rules} Verification Required`),
+        text(
+          [
+            `${user}, your message was removed because your account is not verified yet.`,
+            '',
+            'Select the button below and complete the CAPTCHA form. Once verified, you will receive the verified role and can chat normally.'
+          ].join('\n')
+        )
+      )
+      .addActionRowComponents(
+        buttonRow([
+          new ButtonBuilder()
+            .setCustomId(`verify_start_${guildId}`)
+            .setLabel('Verify Now')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji(EMOJIS.check)
+        ])
+      )
+  ];
+}
+
+function buildVerificationResultComponents(title, body, color = 0x22c55e) {
+  return buildNoticeComponents(title, body, color);
+}
+
 module.exports = {
   EMOJIS,
   EMOJI_TEXT,
   EPHEMERAL_V2_FLAGS,
+  GUILD_ID,
+  ROLE_RESTORE_EXCLUDED_ROLE_IDS,
   SILENT_MENTIONS,
   STAFF_ROLE_IDS,
   SUPPORT_CATEGORY_ID,
   SUPPORT_MODLOG_ID,
   SUPPORT_PANEL_CHANNEL_ID,
+  VERIFIED_ROLE_ID,
   V2_FLAGS,
+  buildBanNoticeComponents,
   buildCloseConfirmComponents,
   buildLogComponents,
+  buildModerationLogComponents,
   buildNoticeComponents,
+  buildRoleLogComponents,
+  buildRoleRestoreOfferComponents,
+  buildRoleRestoreResultComponents,
+  buildRoleUpdateComponents,
   buildSupportMenuComponents,
   buildSupportPanelComponents,
   buildTicketOpenedComponents,
+  buildTimeoutNoticeComponents,
+  buildUnverifiedPromptComponents,
+  buildVerificationResultComponents,
+  buildVerificationWelcomeComponents,
+  buildWarningNoticeComponents,
   buildWelcomeComponents,
   supportReason
 };

@@ -58,6 +58,69 @@ function findOpenTicket(guild, userId) {
   );
 }
 
+async function fetchSupportCategory(guild) {
+  const cached = guild.channels.cache.get(SUPPORT_CATEGORY_ID);
+  if (cached) return cached;
+  return guild.channels.fetch(SUPPORT_CATEGORY_ID).catch(() => null);
+}
+
+async function buildTicketOverwrites(guild, userId) {
+  const staffRoleIds = [];
+  const overwrites = [
+    { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+    {
+      id: userId,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory,
+        PermissionsBitField.Flags.AttachFiles,
+        PermissionsBitField.Flags.EmbedLinks
+      ]
+    }
+  ];
+
+  for (const roleId of STAFF_ROLE_IDS) {
+    const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+    if (!role) {
+      console.warn(`Skipping missing support staff role ${roleId}`);
+      continue;
+    }
+
+    staffRoleIds.push(role.id);
+    overwrites.push({
+      id: role.id,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory,
+        PermissionsBitField.Flags.AttachFiles,
+        PermissionsBitField.Flags.EmbedLinks,
+        PermissionsBitField.Flags.ManageChannels
+      ]
+    });
+  }
+
+  return { overwrites, staffRoleIds };
+}
+
+async function editInteractionNotice(interaction, title, body, color = 0xef4444) {
+  const payload = {
+    components: buildNoticeComponents(title, body, color),
+    flags: V2_FLAGS,
+    allowedMentions: SILENT_MENTIONS
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(payload).catch(() => null);
+  }
+
+  return interaction.reply({
+    ...payload,
+    flags: EPHEMERAL_V2_FLAGS
+  }).catch(() => null);
+}
+
 async function sendTranscriptLog({ channel, interaction, modlog, title = 'Ticket Transcript Saved' }) {
   const content = await saveTranscript(channel);
   const transcriptName = `transcript-${channel.id}-${Date.now()}.txt`;
@@ -106,15 +169,15 @@ module.exports = {
       const challenge = createChallenge({ guildId, userId: interaction.user.id });
       const modal = new ModalBuilder()
         .setCustomId(`verify_submit_${challenge.token}`)
-        .setTitle(`Verification: ${challenge.word}`);
+        .setTitle(`Type: ${challenge.word}`);
 
       const answer = new TextInputBuilder()
         .setCustomId('captcha_answer')
-        .setLabel(`Type this word exactly: ${challenge.word}`)
+        .setLabel(`Type this word: ${challenge.word}`)
         .setPlaceholder(challenge.word)
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
-        .setMaxLength(32);
+        .setMaxLength(20);
 
       modal.addComponents(new ActionRowBuilder().addComponents(answer));
       return interaction.showModal(modal);
@@ -169,9 +232,24 @@ module.exports = {
       }
 
       if (!member.roles.cache.has(role.id)) {
-        await member.roles.add(role, 'Completed Magic UI CAPTCHA verification').catch(error => {
-          console.error(`Failed to add verified role to ${member.user.tag}:`, error.message);
-        });
+        const added = await member.roles.add(role, 'Completed Magic UI CAPTCHA verification')
+          .then(() => true)
+          .catch(error => {
+            console.error(`Failed to add verified role to ${member.user.tag}:`, error.message);
+            return false;
+          });
+
+        if (!added) {
+          return interaction.reply({
+            components: buildVerificationResultComponents(
+              `${EMOJI_TEXT.cross} Verification Role Failed`,
+              'Your CAPTCHA was correct, but I could not add the verified role. Please ask staff to check my role position and Manage Roles permission.',
+              0xef4444
+            ),
+            flags: replyFlagsFor(interaction),
+            allowedMentions: SILENT_MENTIONS
+          });
+        }
       }
 
       return interaction.reply({
@@ -282,147 +360,138 @@ module.exports = {
     if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket_modal_')) {
       await interaction.deferReply({ ephemeral: true });
 
-      const type = interaction.customId.replace('ticket_modal_', '');
-      const reason = supportReason(type);
-      const issueDetails = interaction.fields.getTextInputValue('issue_details');
-      const stepsTaken = interaction.fields.getTextInputValue('steps_taken');
-      const extraNotes = interaction.fields.getTextInputValue('extra_notes') || 'N/A';
+      try {
+        const type = interaction.customId.replace('ticket_modal_', '');
+        const reason = supportReason(type);
+        const issueDetails = interaction.fields.getTextInputValue('issue_details');
+        const stepsTaken = interaction.fields.getTextInputValue('steps_taken');
+        const extraNotes = interaction.fields.getTextInputValue('extra_notes') || 'N/A';
 
-      const nameBase = sanitizeName(interaction.user.username);
-      const channelName = `ticket-${nameBase}-${type}`;
-      const existingTicket = findOpenTicket(interaction.guild, interaction.user.id);
-      if (existingTicket) {
-        return interaction.editReply({
-          components: buildNoticeComponents(
-            `${EMOJI_TEXT.cross} Ticket Already Open`,
-            `You already have an open ticket: ${existingTicket}. Please continue there instead of opening a duplicate.`,
-            0xfaa61a
-          ),
-          flags: V2_FLAGS,
-          allowedMentions: SILENT_MENTIONS
-        });
-      }
-
-      const parent = interaction.guild.channels.cache.get(SUPPORT_CATEGORY_ID);
-      if (!parent) {
-        return interaction.editReply({
-          components: buildNoticeComponents(
-            `${EMOJI_TEXT.cross} Category Not Found`,
-            'The support category is not available. Please contact an administrator.',
-            0xef4444
-          ),
-          flags: V2_FLAGS,
-          allowedMentions: SILENT_MENTIONS
-        });
-      }
-
-      const overwrites = [
-        { id: interaction.guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
-        {
-          id: interaction.user.id,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.ReadMessageHistory,
-            PermissionsBitField.Flags.AttachFiles,
-            PermissionsBitField.Flags.EmbedLinks
-          ]
-        },
-        ...STAFF_ROLE_IDS.map(roleId => ({
-          id: roleId,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.ReadMessageHistory,
-            PermissionsBitField.Flags.AttachFiles,
-            PermissionsBitField.Flags.EmbedLinks,
-            PermissionsBitField.Flags.ManageChannels
-          ]
-        }))
-      ];
-
-      const ch = await interaction.guild.channels.create({
-        name: channelName,
-        type: ChannelType.GuildText,
-        parent: SUPPORT_CATEGORY_ID,
-        topic: `Magic UI support ticket | owner:${interaction.user.id} | reason:${type}`,
-        permissionOverwrites: overwrites,
-        reason: `Ticket created by ${interaction.user.tag} (${interaction.user.id})`
-      });
-
-      await ch.send({
-        components: buildTicketOpenedComponents({
-          user: interaction.user,
-          type,
-          issueDetails,
-          stepsTaken,
-          extraNotes
-        }),
-        flags: V2_FLAGS,
-        allowedMentions: {
-          users: [interaction.user.id],
-          roles: STAFF_ROLE_IDS
+        const nameBase = sanitizeName(interaction.user.username);
+        const channelName = `ticket-${nameBase}-${type}`;
+        const existingTicket = findOpenTicket(interaction.guild, interaction.user.id);
+        if (existingTicket) {
+          return interaction.editReply({
+            components: buildNoticeComponents(
+              `${EMOJI_TEXT.cross} Ticket Already Open`,
+              `You already have an open ticket: ${existingTicket}. Please continue there instead of opening a duplicate.`,
+              0xfaa61a
+            ),
+            flags: V2_FLAGS,
+            allowedMentions: SILENT_MENTIONS
+          });
         }
-      });
 
-      const thread = await ch.threads.create({
-        name: `staff-${nameBase}`,
-        type: ChannelType.PrivateThread,
-        invitable: false,
-        autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
-        reason: 'Private staff discussion thread'
-      }).catch(() => null);
+        const parent = await fetchSupportCategory(interaction.guild);
+        if (!parent || parent.type !== ChannelType.GuildCategory) {
+          return interaction.editReply({
+            components: buildNoticeComponents(
+              `${EMOJI_TEXT.cross} Support Category Not Found`,
+              `I could not find the support category \`${SUPPORT_CATEGORY_ID}\`. Please ask an administrator to check the category ID and bot permissions.`,
+              0xef4444
+            ),
+            flags: V2_FLAGS,
+            allowedMentions: SILENT_MENTIONS
+          });
+        }
 
-      if (thread) {
-        await thread.members.add(client.user.id).catch(() => null);
-        await thread.send({
+        const { overwrites, staffRoleIds } = await buildTicketOverwrites(interaction.guild, interaction.user.id);
+        const ch = await interaction.guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent: parent.id,
+          topic: `Magic UI support ticket | owner:${interaction.user.id} | reason:${type}`,
+          permissionOverwrites: overwrites,
+          reason: `Ticket created by ${interaction.user.tag} (${interaction.user.id})`
+        });
+
+        await ch.send({
+          components: buildTicketOpenedComponents({
+            user: interaction.user,
+            type,
+            issueDetails,
+            stepsTaken,
+            extraNotes,
+            staffRoleIds
+          }),
+          flags: V2_FLAGS,
+          allowedMentions: {
+            users: [interaction.user.id],
+            roles: staffRoleIds
+          }
+        });
+
+        const thread = await ch.threads.create({
+          name: `staff-${nameBase}`,
+          type: ChannelType.PrivateThread,
+          invitable: false,
+          autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
+          reason: 'Private staff discussion thread'
+        }).catch(err => {
+          console.warn('Could not create private staff ticket thread:', err.message);
+          return null;
+        });
+
+        if (thread) {
+          await thread.members.add(client.user.id).catch(() => null);
+          await thread.send({
+            components: buildNoticeComponents(
+              `${EMOJI_TEXT.support} Staff Discussion`,
+              'This is a private staff-only thread for internal discussion regarding this ticket.',
+              0x2b2d31
+            ),
+            flags: V2_FLAGS,
+            allowedMentions: SILENT_MENTIONS
+          }).catch(() => null);
+        }
+
+        await interaction.user.send({
           components: buildNoticeComponents(
-            `${EMOJI_TEXT.support} Staff Discussion`,
-            'This is a private staff-only thread for internal discussion regarding this ticket.',
-            0x2b2d31
+            `${EMOJI_TEXT.check} Ticket Created`,
+            `Your ticket has been successfully created: ${ch}. A staff member will assist you shortly.`,
+            0x22c55e
+          ),
+          flags: V2_FLAGS,
+          allowedMentions: SILENT_MENTIONS
+        }).catch(() => null);
+
+        const modlog = interaction.guild.channels.cache.get(SUPPORT_MODLOG_ID) ||
+          await interaction.guild.channels.fetch(SUPPORT_MODLOG_ID).catch(() => null);
+        if (modlog) {
+          await modlog.send({
+            components: buildLogComponents(
+              'Ticket Created',
+              [
+                `User: ${interaction.user.tag} (${interaction.user.id})`,
+                `Channel: ${ch} (${ch.id})`,
+                `Type: ${reason.label}`,
+                `Time: <t:${Math.floor(Date.now() / 1000)}:F>`
+              ].join('\n'),
+              0x2b2d31
+            ),
+            flags: V2_FLAGS,
+            allowedMentions: SILENT_MENTIONS
+          }).catch(err => console.warn('Could not send ticket create modlog:', err.message));
+        }
+
+        return interaction.editReply({
+          components: buildNoticeComponents(
+            `${EMOJI_TEXT.check} Ticket Opened`,
+            `Your support ticket has been opened successfully: ${ch}`,
+            0x22c55e
           ),
           flags: V2_FLAGS,
           allowedMentions: SILENT_MENTIONS
         });
+      } catch (err) {
+        console.error('Failed to create support ticket:', err);
+        return editInteractionNotice(
+          interaction,
+          `${EMOJI_TEXT.cross} Ticket Could Not Be Created`,
+          'Something went wrong while creating your ticket. Please make sure the bot has Manage Channels, View Channels, Send Messages, and Manage Threads permissions in the support category.',
+          0xef4444
+        );
       }
-
-      await interaction.user.send({
-        components: buildNoticeComponents(
-          `${EMOJI_TEXT.check} Ticket Created`,
-          `Your ticket has been successfully created: ${ch}. A staff member will assist you shortly.`,
-          0x22c55e
-        ),
-        flags: V2_FLAGS,
-        allowedMentions: SILENT_MENTIONS
-      }).catch(() => null);
-
-      const modlog = interaction.guild.channels.cache.get(SUPPORT_MODLOG_ID);
-      if (modlog) {
-        await modlog.send({
-          components: buildLogComponents(
-            'Ticket Created',
-            [
-              `User: ${interaction.user.tag} (${interaction.user.id})`,
-              `Channel: ${ch} (${ch.id})`,
-              `Type: ${reason.label}`,
-              `Time: <t:${Math.floor(Date.now() / 1000)}:F>`
-            ].join('\n'),
-            0x2b2d31
-          ),
-          flags: V2_FLAGS,
-          allowedMentions: SILENT_MENTIONS
-        });
-      }
-
-      return interaction.editReply({
-        components: buildNoticeComponents(
-          `${EMOJI_TEXT.check} Ticket Opened`,
-          `Your support ticket has been opened successfully: ${ch}`,
-          0x22c55e
-        ),
-        flags: V2_FLAGS,
-        allowedMentions: SILENT_MENTIONS
-      });
     }
 
     if (interaction.isButton() && /^ticket_(claim|resolve|hold|transcript|close)$/.test(interaction.customId)) {

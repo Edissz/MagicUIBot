@@ -5,14 +5,18 @@ const path = require('path');
 const dataPath = path.join(__dirname, '../data/verificationChallenges.json');
 const TTL_MS = 10 * 60 * 1000;
 const WORDS = [
-  'MAGIC',
-  'DESIGN',
-  'PIXEL',
-  'COMPONENT',
-  'BUTTON',
-  'LAYOUT',
-  'SYSTEM',
-  'TOKEN'
+  'magic',
+  'design',
+  'pixel',
+  'button',
+  'layout',
+  'system',
+  'token',
+  'motion',
+  'code',
+  'build',
+  'spark',
+  'craft'
 ];
 
 function ensureFile() {
@@ -49,7 +53,7 @@ function createChallenge({ guildId, userId }) {
   cleanup(data);
 
   const token = crypto.randomBytes(8).toString('hex');
-  const word = `${WORDS[crypto.randomInt(WORDS.length)]}-${crypto.randomInt(100, 1000)}`;
+  const word = WORDS[crypto.randomInt(WORDS.length)];
   const now = Date.now();
 
   data.challenges[token] = {

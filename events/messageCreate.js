@@ -1,6 +1,6 @@
 const processed = new Set();
 const verificationPrompts = new Map();
-const { PermissionsBitField } = require('discord.js');
+const { ChannelType, PermissionsBitField, ThreadAutoArchiveDuration } = require('discord.js');
 const {
   VERIFIED_ROLE_ID,
   V2_FLAGS,
@@ -13,27 +13,61 @@ function canBypassVerification(member) {
     member.permissions.has(PermissionsBitField.Flags.ModerateMembers);
 }
 
+function sanitizeThreadName(name) {
+  return name.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24) || 'member';
+}
+
+async function sendVerificationPrompt(message) {
+  const key = `${message.guild.id}:${message.author.id}`;
+  const current = verificationPrompts.get(key);
+  if (current && Date.now() - current.lastPrompt < 60000) return;
+
+  const baseChannel = message.channel.isThread?.() ? message.channel.parent : message.channel;
+  const promptPayload = {
+    components: buildUnverifiedPromptComponents(message.author, message.guild.id),
+    flags: V2_FLAGS,
+    allowedMentions: { users: [message.author.id] }
+  };
+
+  if (baseChannel?.threads?.create && baseChannel.type === ChannelType.GuildText) {
+    const existingThread = current?.threadId
+      ? await message.guild.channels.fetch(current.threadId).catch(() => null)
+      : null;
+    const thread = existingThread?.isThread?.()
+      ? existingThread
+      : await baseChannel.threads.create({
+        name: `verify-${sanitizeThreadName(message.author.username)}`,
+        type: ChannelType.PrivateThread,
+        invitable: false,
+        autoArchiveDuration: ThreadAutoArchiveDuration.OneHour,
+        reason: `Private verification prompt for ${message.author.tag} (${message.author.id})`
+      }).catch(err => {
+        console.warn('Could not create private verification thread:', err.message);
+        return null;
+      });
+
+    if (thread) {
+      verificationPrompts.set(key, { lastPrompt: Date.now(), threadId: thread.id });
+      await thread.members.add(message.author.id).catch(() => null);
+      const sent = await thread.send(promptPayload).then(() => true).catch(err => {
+        console.warn('Could not send private verification prompt:', err.message);
+        return false;
+      });
+      if (sent) return;
+    }
+  }
+
+  verificationPrompts.set(key, { lastPrompt: Date.now(), threadId: null });
+  const prompt = await message.channel.send(promptPayload).catch(() => null);
+  if (prompt) setTimeout(() => prompt.delete().catch(() => null), 30000);
+}
+
 async function handleUnverifiedMessage(message) {
   const member = message.member;
   if (!member || member.roles.cache.has(VERIFIED_ROLE_ID) || canBypassVerification(member)) return false;
 
   await message.delete().catch(() => null);
-
-  const key = `${message.guild.id}:${message.channel.id}:${message.author.id}`;
-  const lastPrompt = verificationPrompts.get(key) || 0;
-  if (Date.now() - lastPrompt < 60000) return true;
-  verificationPrompts.set(key, Date.now());
-
-  const prompt = await message.channel.send({
-    components: buildUnverifiedPromptComponents(message.author, message.guild.id),
-    flags: V2_FLAGS,
-    allowedMentions: { users: [message.author.id] }
-  }).catch(() => null);
-
-  if (prompt) {
-    setTimeout(() => prompt.delete().catch(() => null), 45000);
-  }
-
+  await sendVerificationPrompt(message);
   return true;
 }
 

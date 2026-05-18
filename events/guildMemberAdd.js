@@ -1,9 +1,7 @@
 const {
-  GUILD_ID,
   SILENT_MENTIONS,
   V2_FLAGS,
   buildRoleRestoreOfferComponents,
-  buildVerificationWelcomeComponents,
   buildWelcomeComponents
 } = require('../utils/supportV2');
 const { getRoleSnapshot } = require('../utils/memberRoleStore');
@@ -22,17 +20,6 @@ module.exports = {
       console.log(`Sent welcome DM to ${member.user.tag}`);
     } catch (err) {
       console.error(`Failed to DM ${member.user.tag}:`, err.message);
-    }
-
-    try {
-      await member.send({
-        components: buildVerificationWelcomeComponents(member.guild.id || GUILD_ID),
-        flags: V2_FLAGS,
-        allowedMentions: SILENT_MENTIONS
-      });
-      console.log(`Sent verification DM to ${member.user.tag}`);
-    } catch (err) {
-      console.error(`Failed to send verification DM to ${member.user.tag}:`, err.message);
     }
 
     const snapshot = getRoleSnapshot(member.guild.id, member.id);

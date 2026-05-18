@@ -66,43 +66,36 @@ const EMOJI_TEXT = {
 const SUPPORT_REASONS = {
   billing: {
     label: 'Payment Report',
-    emoji: EMOJIS.payment,
     emojiText: EMOJI_TEXT.payment,
     description: 'Billing, refunds, failed transactions, or receipt questions.'
   },
   bug: {
     label: 'Bug Report',
-    emoji: EMOJIS.bug,
     emojiText: EMOJI_TEXT.bug,
     description: 'Broken components, visual bugs, errors, or regressions.'
   },
   issue: {
     label: 'Issue Report',
-    emoji: EMOJIS.general,
     emojiText: EMOJI_TEXT.general,
     description: 'Setup, installation, access, or technical support issues.'
   },
   appeal: {
     label: 'Moderation Appeal',
-    emoji: EMOJIS.rules,
     emojiText: EMOJI_TEXT.rules,
     description: 'Ask about a warning, timeout, removed content, or appeal.'
   },
   rule: {
     label: 'Rule Violation',
-    emoji: EMOJIS.report,
     emojiText: EMOJI_TEXT.report,
     description: 'Report a member, unsafe behavior, or server rule issue.'
   },
   order: {
     label: 'Order / Product Issue',
-    emoji: EMOJIS.order,
     emojiText: EMOJI_TEXT.order,
     description: 'Product delivery, purchase access, or order problems.'
   },
   general: {
     label: 'General Support',
-    emoji: EMOJIS.general,
     emojiText: EMOJI_TEXT.general,
     description: 'Questions that do not fit the other support reasons.'
   }
@@ -146,7 +139,6 @@ function supportSelect() {
           .setLabel(reason.label)
           .setDescription(reason.description)
           .setValue(value)
-          .setEmoji(reason.emoji)
       )
     );
 }
@@ -155,8 +147,7 @@ function supportButton(label = 'Open Support') {
   return new ButtonBuilder()
     .setLabel(label)
     .setURL(SUPPORT_URL)
-    .setStyle(ButtonStyle.Link)
-    .setEmoji(EMOJIS.support);
+    .setStyle(ButtonStyle.Link);
 }
 
 function buildSupportPanelComponents() {
@@ -250,28 +241,23 @@ function buildTicketOpenedComponents({ user, type, issueDetails, stepsTaken, ext
           new ButtonBuilder()
             .setCustomId('ticket_claim')
             .setLabel('Claim')
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji(EMOJIS.check),
+            .setStyle(ButtonStyle.Primary),
           new ButtonBuilder()
             .setCustomId('ticket_resolve')
             .setLabel('Resolve')
-            .setStyle(ButtonStyle.Success)
-            .setEmoji(EMOJIS.check),
+            .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId('ticket_hold')
             .setLabel('Hold')
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji(EMOJIS.general),
+            .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
             .setCustomId('ticket_transcript')
             .setLabel('Transcript')
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji(EMOJIS.support),
+            .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
             .setCustomId('ticket_close')
             .setLabel('Close')
             .setStyle(ButtonStyle.Danger)
-            .setEmoji(EMOJIS.cross)
         ])
       )
   ];
@@ -298,8 +284,7 @@ function buildCloseConfirmComponents() {
           new ButtonBuilder()
             .setCustomId('ticket_close_confirm')
             .setLabel('Confirm Close')
-            .setStyle(ButtonStyle.Danger)
-            .setEmoji(EMOJIS.cross),
+            .setStyle(ButtonStyle.Danger),
           new ButtonBuilder()
             .setCustomId('ticket_close_cancel')
             .setLabel('Cancel')
@@ -359,14 +344,12 @@ function buildWelcomeComponents(user) {
           new ButtonBuilder()
             .setLabel('Visit Magic UI')
             .setURL(MAGIC_UI_URL)
-            .setStyle(ButtonStyle.Link)
-            .setEmoji(EMOJIS.brand),
+            .setStyle(ButtonStyle.Link),
           supportButton('Support'),
           new ButtonBuilder()
             .setLabel('Rules')
             .setURL(RULES_URL)
             .setStyle(ButtonStyle.Link)
-            .setEmoji(EMOJIS.rules)
         ])
       )
   ];
@@ -446,13 +429,11 @@ function buildRoleRestoreOfferComponents({ guildId, savedAt, roleNames = [] }) {
           new ButtonBuilder()
             .setCustomId(`role_restore_accept_${guildId}`)
             .setLabel('Yes, restore roles')
-            .setStyle(ButtonStyle.Success)
-            .setEmoji(EMOJIS.check),
+            .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId(`role_restore_decline_${guildId}`)
             .setLabel('No, thanks')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji(EMOJIS.cross)
         ])
       )
   ];
@@ -641,7 +622,6 @@ function buildVerificationWelcomeComponents(guildId = GUILD_ID) {
             .setCustomId(`verify_start_${guildId}`)
             .setLabel('Start Verification')
             .setStyle(ButtonStyle.Success)
-            .setEmoji(EMOJIS.check)
         ])
       )
   ];
@@ -667,7 +647,6 @@ function buildUnverifiedPromptComponents(user, guildId = GUILD_ID) {
             .setCustomId(`verify_start_${guildId}`)
             .setLabel('Verify Now')
             .setStyle(ButtonStyle.Success)
-            .setEmoji(EMOJIS.check)
         ])
       )
   ];

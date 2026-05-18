@@ -32,10 +32,24 @@ if (!fs.existsSync(eventsPath)) fs.mkdirSync(eventsPath, { recursive: true });
 const eventFiles = fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'));
 for (const f of eventFiles) {
   const ev = require(path.join(eventsPath, f));
-  if (ev.once) client.once(ev.name, (...args) => ev.execute(...args, client));
-  else client.on(ev.name, (...args) => ev.execute(...args, client));
+  const runEvent = (...args) => {
+    Promise.resolve(ev.execute(...args, client)).catch(err => {
+      console.error(`Error in ${ev.name} event from ${f}:`, err);
+    });
+  };
+
+  if (ev.once) client.once(ev.name, runEvent);
+  else client.on(ev.name, runEvent);
   console.log(`✅ Loaded event: ${ev.name}`);
 }
+
+client.on('error', err => {
+  console.error('Discord client error:', err);
+});
+
+process.on('unhandledRejection', err => {
+  console.error('Unhandled promise rejection:', err);
+});
 
 client.login(process.env.TOKEN)
   .then(() => console.log('✅ Bot is online and ready!'))

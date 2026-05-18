@@ -14,22 +14,19 @@ function canBypassVerification(member) {
 }
 
 async function sendVerificationPrompt(message) {
-  const key = `${message.guild.id}:${message.channel.id}:${message.author.id}`;
+  const key = `${message.guild.id}:${message.author.id}`;
   const lastPrompt = verificationPrompts.get(key) || 0;
   if (Date.now() - lastPrompt < 60000) return;
 
   verificationPrompts.set(key, Date.now());
 
-  const prompt = await message.channel.send({
+  await message.author.send({
     components: buildUnverifiedPromptComponents(message.author, message.guild.id),
     flags: V2_FLAGS,
     allowedMentions: { users: [message.author.id] }
   }).catch(err => {
-    console.warn('Could not send verification prompt:', err.message);
-    return null;
+    console.warn(`Could not DM verification prompt to ${message.author.tag}:`, err.message);
   });
-
-  if (prompt) setTimeout(() => prompt.delete().catch(() => null), 45000);
 }
 
 async function handleUnverifiedMessage(message) {

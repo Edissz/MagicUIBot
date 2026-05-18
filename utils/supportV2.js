@@ -626,7 +626,7 @@ function buildUnverifiedPromptComponents(user, guildId = GUILD_ID) {
         text(`# ${EMOJI_TEXT.rules} Verification Required`),
         text(
           [
-            `${user}, your message was removed because your account is not verified yet.`,
+            `${user}, your message in Magic UI was removed because your account is not verified yet.`,
             '',
             'Use the button below and type the simple word shown in the form. After that, you can chat normally.'
           ].join('\n')

@@ -45,7 +45,8 @@ const EMOJIS = {
   order: { id: '1421844296537083994', name: 'techouse216' },
   brand: { id: '1346947141570007060', name: 'MagicUI' },
   star: { id: '1501563855539535882', name: 'starbulkrounded' },
-  mail: { id: '1501564351763710137', name: 'mailaccount02bulkrounded' }
+  mail: { id: '1501564351763710137', name: 'mailaccount02bulkrounded' },
+  fingerprintScan: { id: '1508049344547393637', name: 'fingerprintscanbulkrounded' }
 };
 
 const EMOJI_TEXT = {
@@ -60,7 +61,8 @@ const EMOJI_TEXT = {
   order: '<:techouse216:1421844296537083994>',
   brand: '<:MagicUI:1346947141570007060>',
   star: '<:starbulkrounded:1501563855539535882>',
-  mail: '<:mailaccount02bulkrounded:1501564351763710137>'
+  mail: '<:mailaccount02bulkrounded:1501564351763710137>',
+  fingerprintScan: '<:fingerprintscanbulkrounded:1508049344547393637>'
 };
 
 const SUPPORT_REASONS = {
@@ -624,16 +626,29 @@ function buildVerificationWelcomeComponents(guildId = GUILD_ID) {
 }
 
 function buildUnverifiedPromptComponents(user, guildId = GUILD_ID) {
+  const userLabel = user ? `${user}` : 'there';
+
   return [
     new ContainerBuilder()
-      .setAccentColor(0xfaa61a)
+      .setAccentColor(0x5865f2)
       .addTextDisplayComponents(
-        text(`# ${EMOJI_TEXT.rules} Verification Required`),
+        text(`# ${EMOJI_TEXT.fingerprintScan} Verification Required`),
         text(
           [
-            `${user}, your message in Magic UI was removed because your account is not verified yet.`,
+            `${userLabel}, your message in Magic UI was removed because this account has not passed verification yet.`,
             '',
-            'Use the button below and type the simple word shown in the form. After that, you can chat normally.'
+            'This keeps the community clean while still making the check quick.'
+          ].join('\n')
+        )
+      )
+      .addSeparatorComponents(separator())
+      .addTextDisplayComponents(
+        text(
+          [
+            `### ${EMOJI_TEXT.check} Next Step`,
+            'Select **Verify Now**, type the word shown in the form, and the verified role will be applied automatically.',
+            '',
+            '**Status:** Waiting for verification'
           ].join('\n')
         )
       )
@@ -642,7 +657,8 @@ function buildUnverifiedPromptComponents(user, guildId = GUILD_ID) {
           new ButtonBuilder()
             .setCustomId(`verify_start_${guildId}`)
             .setLabel('Verify Now')
-            .setStyle(ButtonStyle.Success)
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji(EMOJIS.fingerprintScan)
         ])
       )
   ];

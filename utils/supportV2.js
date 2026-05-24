@@ -25,6 +25,7 @@ const ROLE_RESTORE_EXCLUDED_ROLE_IDS = [...STAFF_ROLE_IDS];
 const SUPPORT_IMAGE_URL = 'https://cdn.discordapp.com/attachments/1355260778965373000/1421110900508721182/Here_to_Help..gif?ex=68fa1f29&is=68f8cda9&hm=06e75e6659eff21a4e1cd2f3d4073b241c9e5e661ea85fdda42b6f8592ce0164';
 const WELCOME_IMAGE_URL = 'https://magicui.design/og';
 const MAGIC_UI_URL = 'https://magicui.design/';
+const PRO_MAGIC_UI_URL = 'https://pro.magicui.design/?via=Edis';
 const RULES_URL = 'https://discord.com/channels/1151315619246002176/1151318734158446623';
 const SUPPORT_BOT_MENTION = '<@1430212769973670092>';
 
@@ -339,6 +340,10 @@ function buildWelcomeComponents(user) {
           new ButtonBuilder()
             .setLabel('Visit Magic UI')
             .setURL(MAGIC_UI_URL)
+            .setStyle(ButtonStyle.Link),
+          new ButtonBuilder()
+            .setLabel('Get Magic UI Pro')
+            .setURL(PRO_MAGIC_UI_URL)
             .setStyle(ButtonStyle.Link),
           new ButtonBuilder()
             .setLabel('Rules')

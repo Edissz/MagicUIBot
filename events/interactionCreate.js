@@ -28,7 +28,15 @@ const {
   supportReason
 } = require('../utils/supportV2');
 const { restoreSnapshotRoles, getRoleSnapshot, setRestoreDecision } = require('../utils/memberRoleStore');
-const { consumeChallenge, createChallenge } = require('../utils/verificationStore');
+const { consumeChallenge, createChallenge, shouldSendFailureReminder } = require('../utils/verificationStore');
+
+const VERIFICATION_FAILURE_REMINDER = [
+  `${EMOJI_TEXT.fingerprintScan} Your Magic UI verification did not go through.`,
+  '',
+  'Open the Magic UI server, send a message in any channel, then select **Verify Now** and type the word exactly as shown.',
+  '',
+  'This reminder is sent at most once every 48 hours.'
+].join('\n');
 
 function sanitizeName(s) {
   return s.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 20) || 'ticket';
@@ -56,6 +64,14 @@ function findOpenTicket(guild, userId) {
     channel.topic?.includes(`owner:${userId}`) &&
     !channel.name.startsWith('closed-')
   );
+}
+
+function queueVerificationFailureReminder(user) {
+  if (!shouldSendFailureReminder(user.id)) return;
+
+  user.send(VERIFICATION_FAILURE_REMINDER).catch(err => {
+    console.warn(`Could not DM verification failure reminder to ${user.tag}:`, err.message);
+  });
 }
 
 async function fetchSupportCategory(guild) {
@@ -188,6 +204,8 @@ module.exports = {
       const challenge = consumeChallenge(token);
 
       if (!challenge || challenge.userId !== interaction.user.id) {
+        queueVerificationFailureReminder(interaction.user);
+
         return interaction.reply({
           components: buildVerificationResultComponents(
             `${EMOJI_TEXT.cross} Verification Expired`,
@@ -201,6 +219,8 @@ module.exports = {
 
       const answer = interaction.fields.getTextInputValue('captcha_answer').trim().toUpperCase();
       if (answer !== challenge.word.toUpperCase()) {
+        queueVerificationFailureReminder(interaction.user);
+
         return interaction.reply({
           components: buildVerificationResultComponents(
             `${EMOJI_TEXT.cross} Verification Failed`,

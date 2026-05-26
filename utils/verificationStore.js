@@ -4,6 +4,8 @@ const path = require('path');
 
 const dataPath = path.join(__dirname, '../data/verificationChallenges.json');
 const TTL_MS = 10 * 60 * 1000;
+const FAILURE_REMINDER_MS = 48 * 60 * 60 * 1000;
+const REMINDER_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const WORDS = [
   'magic',
   'design',
@@ -46,6 +48,12 @@ function cleanup(data) {
       delete data.challenges[token];
     }
   }
+
+  for (const [userId, lastSentAt] of Object.entries(data.failureReminders || {})) {
+    if (!lastSentAt || now - Number(lastSentAt) > REMINDER_RETENTION_MS) {
+      delete data.failureReminders[userId];
+    }
+  }
 }
 
 function createChallenge({ guildId, userId }) {
@@ -85,8 +93,27 @@ function consumeChallenge(token) {
   return challenge;
 }
 
+function shouldSendFailureReminder(userId, now = Date.now()) {
+  const data = load();
+  cleanup(data);
+
+  if (!data.failureReminders) data.failureReminders = {};
+
+  const key = String(userId);
+  const lastSentAt = Number(data.failureReminders[key] || 0);
+  if (lastSentAt && now - lastSentAt < FAILURE_REMINDER_MS) {
+    save(data);
+    return false;
+  }
+
+  data.failureReminders[key] = now;
+  save(data);
+  return true;
+}
+
 module.exports = {
   consumeChallenge,
   createChallenge,
-  getChallenge
+  getChallenge,
+  shouldSendFailureReminder
 };

@@ -1,40 +1,45 @@
 const processed = new Set();
 const verificationPrompts = new Map();
-const { PermissionsBitField } = require('discord.js');
 const {
   VERIFIED_ROLE_ID,
   V2_FLAGS,
   buildUnverifiedPromptComponents
 } = require('../utils/supportV2');
 
-function canBypassVerification(member) {
-  return member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-    member.permissions.has(PermissionsBitField.Flags.ManageGuild) ||
-    member.permissions.has(PermissionsBitField.Flags.ModerateMembers);
-}
+const VERIFICATION_PROMPT_COOLDOWN_MS = 60 * 1000;
+const VERIFICATION_PROMPT_DELETE_MS = 2 * 60 * 1000;
 
 async function sendVerificationPrompt(message) {
   const key = `${message.guild.id}:${message.author.id}`;
   const lastPrompt = verificationPrompts.get(key) || 0;
-  if (Date.now() - lastPrompt < 60000) return;
+  if (Date.now() - lastPrompt < VERIFICATION_PROMPT_COOLDOWN_MS) return;
 
   verificationPrompts.set(key, Date.now());
 
-  await message.author.send({
+  const prompt = await message.reply({
     components: buildUnverifiedPromptComponents(message.author, message.guild.id),
     flags: V2_FLAGS,
-    allowedMentions: { users: [message.author.id] }
+    allowedMentions: {
+      users: [message.author.id],
+      repliedUser: true
+    }
   }).catch(err => {
-    console.warn(`Could not DM verification prompt to ${message.author.tag}:`, err.message);
+    console.warn(`Could not send verification prompt to ${message.author.tag}:`, err.message);
   });
+
+  if (prompt) {
+    setTimeout(() => {
+      prompt.delete().catch(() => null);
+    }, VERIFICATION_PROMPT_DELETE_MS);
+  }
 }
 
 async function handleUnverifiedMessage(message) {
   const member = message.member;
-  if (!member || member.roles.cache.has(VERIFIED_ROLE_ID) || canBypassVerification(member)) return false;
+  if (!member || member.roles.cache.has(VERIFIED_ROLE_ID)) return false;
 
-  await message.delete().catch(() => null);
   await sendVerificationPrompt(message);
+  await message.delete().catch(() => null);
   return true;
 }
 

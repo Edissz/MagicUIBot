@@ -6,6 +6,7 @@ const {
   ButtonStyle,
   ChannelType,
   ContainerBuilder,
+  FileBuilder,
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
   MessageFlags,
@@ -25,13 +26,24 @@ const CONFIG = {
   jobPanelChannelId: '1501531376581742622',
   forHireChannelId: '1501531243395809440',
   hiringChannelId: '1501531310760657018',
+  marketplaceChannelId: '1509135529017610321',
+  templatePurchaseCategoryId: '1502554201916706826',
   adminChannelId: '1501536845794775060',
   reportChannelId: '1501563431218708570',
   staffRoleIds: ['1405207645618700349', '1324536259439362089'],
+  templateSellerRoleIds: [
+    '1217664590750547999',
+    '1237525644406165716',
+    '1440375880924004412',
+    '1500513236846379099',
+    '1246103902265413644',
+    '1421872176424030309'
+  ],
   colors: {
     panel: 0xf38cb6,
     forHire: 0x2dd4bf,
     hiring: 0x60a5fa,
+    marketplace: 0x7dd3fc,
     admin: 0xfacc15,
     report: 0xef4444,
     verified: 0x22c55e,
@@ -40,6 +52,8 @@ const CONFIG = {
 };
 
 const EMOJIS = {
+  check: { id: '1430525546608988203', name: 'check' },
+  cross: { id: '1430525603701850165', name: 'cross' },
   forHire: { id: '1492616764335460482', name: 'joblinkbulkrounded' },
   hiring: { id: '1492616786166677544', name: 'jobsearchbulkrounded1' },
   report: { id: '1492622062647250995', name: 'alert02bulkrounded' },
@@ -47,10 +61,14 @@ const EMOJIS = {
   apply: { id: '1473388533971681464', name: '4534' },
   review: { id: '1501563855539535882', name: 'starbulkrounded' },
   starGold: { id: '1501564079813431427', name: 'starbulkrounded1' },
-  contact: { id: '1501564351763710137', name: 'mailaccount02bulkrounded' }
+  contact: { id: '1501564351763710137', name: 'mailaccount02bulkrounded' },
+  payment: { id: '1421842840899551332', name: 'techouse212' },
+  marketplace: { id: '1501564079813431427', name: 'starbulkrounded1' }
 };
 
 const EMOJI_TEXT = {
+  check: '<:check:1430525546608988203>',
+  cross: '<:cross:1430525603701850165>',
   forHire: '<:joblinkbulkrounded:1492616764335460482>',
   hiring: '<:jobsearchbulkrounded1:1492616786166677544>',
   report: '<:alert02bulkrounded:1492622062647250995>',
@@ -58,7 +76,9 @@ const EMOJI_TEXT = {
   apply: '<:4534:1473388533971681464>',
   review: '<:starbulkrounded:1501563855539535882>',
   starGold: '<:starbulkrounded1:1501564079813431427>',
-  contact: '<:mailaccount02bulkrounded:1501564351763710137>'
+  contact: '<:mailaccount02bulkrounded:1501564351763710137>',
+  payment: '<:techouse212:1421842840899551332>',
+  marketplace: '<:starbulkrounded1:1501564079813431427>'
 };
 
 const CATEGORY_OPTIONS = [
@@ -78,6 +98,22 @@ const PAYMENT_OPTIONS = [
   { label: 'Negotiable', value: 'negotiable', description: 'Payment method or compensation is decided after contact.' }
 ];
 
+const TEMPLATE_CATEGORY_OPTIONS = [
+  { label: 'SaaS Template', value: 'template_saas', description: 'SaaS apps, startups, auth flows, dashboards, and billing.' },
+  { label: 'Dashboard / Admin', value: 'template_dashboard', description: 'Admin panels, analytics, CRMs, and internal tools.' },
+  { label: 'Landing Page', value: 'template_landing', description: 'Marketing pages, waitlists, launch pages, and websites.' },
+  { label: 'Component Pack', value: 'template_components', description: 'Reusable UI sections, blocks, and component kits.' },
+  { label: 'Portfolio / Agency', value: 'template_portfolio', description: 'Portfolio, agency, studio, and personal brand templates.' },
+  { label: 'Other Template', value: 'template_other', description: 'Any custom template that does not fit the main categories.' }
+];
+
+const TEMPLATE_PAYMENT_OPTIONS = [
+  { label: 'PayPal', value: 'template_paypal', description: 'Buyer pays through PayPal instructions in the ticket.' },
+  { label: 'Stripe / Card', value: 'template_stripe', description: 'Buyer pays by card, Stripe link, or invoice.' },
+  { label: 'Crypto', value: 'template_crypto', description: 'Buyer pays through a crypto wallet or invoice.' },
+  { label: 'Other / Manual', value: 'template_other_payment', description: 'Wise, bank transfer, local method, or manual invoice.' }
+];
+
 const STORE_FILE = path.join(__dirname, '..', 'data', 'jobPosts.json');
 const JOB_PANEL_IMAGE_URL = 'https://cdn.discordapp.com/attachments/1463916239528267839/1501582387732283464/She_Builds._14.png?ex=69fc9913&is=69fb4793&hm=c06b88903df4701b2ba4181f5916fc6b34baa8b17f815b879b040f5302061e96';
 
@@ -85,7 +121,8 @@ function defaultStore() {
   return {
     version: 1,
     posts: {},
-    reports: {}
+    reports: {},
+    purchases: {}
   };
 }
 
@@ -105,7 +142,8 @@ function loadStore() {
       ...defaultStore(),
       ...parsed,
       posts: parsed.posts || {},
-      reports: parsed.reports || {}
+      reports: parsed.reports || {},
+      purchases: parsed.purchases || {}
     };
   } catch (err) {
     console.error('Failed to load job board store:', err);
@@ -162,6 +200,34 @@ function updateReport(reportId, updater) {
   return next;
 }
 
+function addPurchase(purchase) {
+  const store = loadStore();
+  const post = store.posts[purchase.postId];
+  if (!post) return null;
+
+  if (!Array.isArray(post.purchases)) post.purchases = [];
+  if (!post.purchases.includes(purchase.id)) post.purchases.push(purchase.id);
+
+  store.purchases[purchase.id] = purchase;
+  store.posts[post.id] = post;
+  saveStore(store);
+  return { post, purchase };
+}
+
+function getPurchase(purchaseId) {
+  return loadStore().purchases[purchaseId] || null;
+}
+
+function updatePurchase(purchaseId, updater) {
+  const store = loadStore();
+  const purchase = store.purchases[purchaseId];
+  if (!purchase) return null;
+  const next = updater(purchase, store) || purchase;
+  store.purchases[purchaseId] = next;
+  saveStore(store);
+  return next;
+}
+
 function createId(prefix) {
   return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -176,6 +242,11 @@ function isAdminMember(member) {
 
 function canUseCustomPostColor(member) {
   return isAdminMember(member) || Boolean(member?.premiumSince || member?.premiumSinceTimestamp);
+}
+
+function canSellTemplates(member) {
+  if (!member?.roles?.cache) return false;
+  return CONFIG.templateSellerRoleIds.some(roleId => member.roles.cache.has(roleId));
 }
 
 async function fetchTextChannel(guild, channelId) {
@@ -230,15 +301,33 @@ function optionLabel(options, value, fallback = 'Not specified') {
   return options.find(option => option.value === value)?.label || fallback;
 }
 
-function categoryLabel(value) {
-  return optionLabel(CATEGORY_OPTIONS, value, 'Other');
+function categoryOptionsFor(type) {
+  return type === 'template' ? TEMPLATE_CATEGORY_OPTIONS : CATEGORY_OPTIONS;
 }
 
-function paymentLabel(value) {
-  return optionLabel(PAYMENT_OPTIONS, value, 'Not specified');
+function paymentOptionsFor(type) {
+  return type === 'template' ? TEMPLATE_PAYMENT_OPTIONS : PAYMENT_OPTIONS;
+}
+
+function categoryLabel(value, type = null) {
+  return optionLabel(categoryOptionsFor(type), value, type === 'template' ? 'Other Template' : 'Other');
+}
+
+function paymentLabel(value, type = null) {
+  return optionLabel(paymentOptionsFor(type), value, 'Not specified');
 }
 
 function getTypeMeta(type) {
+  if (type === 'template') {
+    return {
+      label: 'Creator Marketplace Template',
+      channelId: CONFIG.marketplaceChannelId,
+      emoji: EMOJIS.marketplace,
+      emojiText: EMOJI_TEXT.marketplace,
+      color: CONFIG.colors.marketplace
+    };
+  }
+
   if (type === 'for_hire') {
     return {
       label: 'For Hire',
@@ -293,7 +382,12 @@ function buildJobPanelComponents() {
         .setLabel('Post Hiring Position')
         .setDescription('Share a role, gig, commission, bounty, or project brief.')
         .setValue('hiring')
-        .setEmoji(EMOJIS.hiring)
+        .setEmoji(EMOJIS.hiring),
+      new StringSelectMenuOptionBuilder()
+        .setLabel('Sell Custom Template')
+        .setDescription('List a premium template in the creator marketplace.')
+        .setValue('template')
+        .setEmoji(EMOJIS.marketplace)
     );
 
   return [
@@ -307,6 +401,7 @@ function buildJobPanelComponents() {
             '',
             `${EMOJI_TEXT.forHire} **For Hire:** showcase your skills in <#${CONFIG.forHireChannelId}>.`,
             `${EMOJI_TEXT.hiring} **Hiring:** post roles, gigs, or briefs in <#${CONFIG.hiringChannelId}>.`,
+            `${EMOJI_TEXT.marketplace} **Templates:** approved creators can sell custom templates in <#${CONFIG.marketplaceChannelId}>.`,
             `${EMOJI_TEXT.verified} **Verified:** staff-reviewed opportunities.`
           ].join('\n')
         )
@@ -333,7 +428,7 @@ function buildJobPanelComponents() {
         text(
           [
             '### Create A Post',
-            'Choose a post type below. You can preview before publishing and optionally add images or a booster/admin accent color.'
+            'Choose a post type below. You can preview before publishing and optionally add images or a booster/admin accent color. Template selling is limited to active, trusted MagicUI creators.'
           ].join('\n')
         )
       )
@@ -356,6 +451,7 @@ function buildAdminHubComponents(sourceUser) {
             `Public panel channel: <#${CONFIG.jobPanelChannelId}>`,
             `For hire channel: <#${CONFIG.forHireChannelId}>`,
             `Hiring channel: <#${CONFIG.hiringChannelId}>`,
+            `Creator marketplace: <#${CONFIG.marketplaceChannelId}>`,
             `Report channel: <#${CONFIG.reportChannelId}>`,
             '',
             `Last refreshed by: ${sourceUser ? `<@${sourceUser.id}>` : 'Staff'}`
@@ -385,6 +481,7 @@ function buildAdminHubComponents(sourceUser) {
 
 function buildPostComponents(post) {
   const meta = getTypeMeta(post.type);
+  const isTemplate = post.type === 'template';
   const reviews = Array.isArray(post.reviews) ? post.reviews : [];
   const applications = Array.isArray(post.applications) ? post.applications : [];
   const verified = post.verified
@@ -392,13 +489,14 @@ function buildPostComponents(post) {
     : 'Staff verification pending';
   const latestReview = reviews.length ? reviews[reviews.length - 1] : null;
   const applyLine = post.type === 'hiring' ? `Applications: ${applications.length}` : null;
+  const purchaseLine = isTemplate ? `Purchase tickets: ${(post.purchases || []).length}` : null;
   const latestReviewRating = Math.max(1, Math.min(5, Math.round(Number(latestReview?.rating || 0))));
   const latestReviewLine = latestReview
     ? `**Latest review:** ${EMOJI_TEXT.starGold.repeat(latestReviewRating)}${EMOJI_TEXT.review.repeat(5 - latestReviewRating)} ${latestReview.body}`
     : null;
 
-  const container = new ContainerBuilder();
-  if (Number.isInteger(post.accentColor)) container.setAccentColor(post.accentColor);
+  const container = new ContainerBuilder()
+    .setAccentColor(Number.isInteger(post.accentColor) ? post.accentColor : meta.color);
 
   container
     .addTextDisplayComponents(
@@ -407,11 +505,13 @@ function buildPostComponents(post) {
         [
           `${meta.emojiText} **${meta.label}** by <@${post.authorId}>`,
           `${verified}`,
-          `Category: **${categoryLabel(post.category)}**`,
-          `Payment: **${paymentLabel(post.payment)}**`,
+          `Category: **${categoryLabel(post.category, post.type)}**`,
+          isTemplate ? `Price: **${post.price || 'Not specified'}**` : `Payment: **${paymentLabel(post.payment, post.type)}**`,
+          isTemplate ? `Accepted payment: **${paymentLabel(post.payment, post.type)}**` : null,
+          isTemplate ? `Built with: **${post.stack || 'React / custom frontend'}**` : null,
           `Status: **${statusLabel(post)}**`,
           `Posted: <t:${Math.floor(post.createdAt / 1000)}:R>`
-        ].join('\n')
+        ].filter(Boolean).join('\n')
       )
     )
     .addSeparatorComponents(separator(SeparatorSpacingSize.Large))
@@ -420,9 +520,12 @@ function buildPostComponents(post) {
       text(post.body),
       text(
         [
-          `${EMOJI_TEXT.contact} **Contact:** ${post.contact}`,
+          isTemplate
+            ? `${EMOJI_TEXT.payment} **Purchase:** click **Purchase** to open a private payment and delivery ticket.`
+            : `${EMOJI_TEXT.contact} **Contact:** ${post.contact}`,
           `${EMOJI_TEXT.review} **Reviews:** ${ratingSummary(reviews)}`,
           applyLine,
+          purchaseLine,
           latestReviewLine
         ]
           .filter(Boolean)
@@ -455,10 +558,20 @@ function buildPostComponents(post) {
       );
     }
 
+    if (isTemplate && post.status === 'open') {
+      buttons.push(
+        new ButtonBuilder()
+          .setCustomId(`job_template_purchase_${post.id}`)
+          .setLabel('Purchase')
+          .setStyle(ButtonStyle.Success)
+          .setEmoji(EMOJIS.payment)
+      );
+    }
+
     buttons.push(
       new ButtonBuilder()
         .setCustomId(`job_contact_${post.id}`)
-        .setLabel('Contact')
+        .setLabel(isTemplate ? 'Seller Info' : 'Contact')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji(EMOJIS.contact),
       new ButtonBuilder()
@@ -482,9 +595,11 @@ function buildPostComponents(post) {
 
 function buildAdminPostComponents(post) {
   const meta = getTypeMeta(post.type);
+  const isTemplate = post.type === 'template';
   const reportCount = Array.isArray(post.reports) ? post.reports.length : 0;
   const reviewCount = Array.isArray(post.reviews) ? post.reviews.length : 0;
   const applicationCount = Array.isArray(post.applications) ? post.applications.length : 0;
+  const purchaseCount = Array.isArray(post.purchases) ? post.purchases.length : 0;
   const verifyButton = new ButtonBuilder()
     .setCustomId(`job_admin_verify_${post.id}`)
     .setLabel(post.verified ? 'Remove Verify' : 'Verify')
@@ -511,18 +626,20 @@ function buildAdminPostComponents(post) {
           [
             `Author: <@${post.authorId}> (${post.authorId})`,
             `Type: **${meta.label}**`,
-            `Category: **${categoryLabel(post.category)}**`,
-            `Payment: **${paymentLabel(post.payment)}**`,
+            `Category: **${categoryLabel(post.category, post.type)}**`,
+            isTemplate ? `Price: **${post.price || 'Not specified'}**` : `Payment: **${paymentLabel(post.payment, post.type)}**`,
+            isTemplate ? `Accepted payment: **${paymentLabel(post.payment, post.type)}**` : null,
+            isTemplate ? `Built with: **${post.stack || 'Not specified'}**` : null,
             `Custom color: **${Number.isInteger(post.accentColor) ? `#${post.accentColor.toString(16).padStart(6, '0').toUpperCase()}` : 'None'}**`,
             `Status: **${statusLabel(post)}**`,
             `Verified: **${post.verified ? 'Yes' : 'No'}**`,
-            `Reports: **${reportCount}** | Reviews: **${reviewCount}** | Applications: **${applicationCount}**`,
+            `Reports: **${reportCount}** | Reviews: **${reviewCount}** | Applications: **${applicationCount}** | Purchases: **${purchaseCount}**`,
             `Public post: ${publicPostUrl(post)}`
-          ].join('\n')
+          ].filter(Boolean).join('\n')
         )
       )
       .addSeparatorComponents(separator())
-      .addTextDisplayComponents(text(`Contact: ${post.contact}`))
+      .addTextDisplayComponents(text(`${isTemplate ? 'Payment instructions' : 'Contact'}: ${post.contact}`))
       .addActionRowComponents(
         new ActionRowBuilder().addComponents(
           verifyButton,
@@ -593,21 +710,33 @@ function buildReportComponents(post, report) {
 }
 
 function buildContactComponents(post) {
-  const container = new ContainerBuilder();
-  if (Number.isInteger(post.accentColor)) container.setAccentColor(post.accentColor);
+  const isTemplate = post.type === 'template';
+  const meta = getTypeMeta(post.type);
+  const container = new ContainerBuilder()
+    .setAccentColor(Number.isInteger(post.accentColor) ? post.accentColor : meta.color);
 
   return [
     container
       .addTextDisplayComponents(
-        text(`# ${EMOJI_TEXT.contact} Contact Details`),
+        text(`# ${EMOJI_TEXT.contact} ${isTemplate ? 'Seller Details' : 'Contact Details'}`),
         text(
-          [
-            `Post: **${post.title}**`,
-            `Category: **${categoryLabel(post.category)}**`,
-            `Payment: **${paymentLabel(post.payment)}**`,
-            `Poster: <@${post.authorId}>`,
-            `Contact: ${post.contact}`
-          ].join('\n')
+          isTemplate
+            ? [
+                `Template: **${post.title}**`,
+                `Category: **${categoryLabel(post.category, post.type)}**`,
+                `Price: **${post.price || 'Not specified'}**`,
+                `Built with: **${post.stack || 'Not specified'}**`,
+                `Seller: <@${post.authorId}>`,
+                '',
+                'For buyer safety, use the **Purchase** button on the marketplace post. Payment instructions and delivery happen inside a private ticket.'
+              ].join('\n')
+            : [
+                `Post: **${post.title}**`,
+                `Category: **${categoryLabel(post.category, post.type)}**`,
+                `Payment: **${paymentLabel(post.payment, post.type)}**`,
+                `Poster: <@${post.authorId}>`,
+                `Contact: ${post.contact}`
+              ].join('\n')
         )
       )
   ];
@@ -634,13 +763,150 @@ function buildApplicationComponents(post, application) {
   ];
 }
 
+function buildTemplateAccessDeniedComponents() {
+  return [
+    new ContainerBuilder()
+      .setAccentColor(CONFIG.colors.report)
+      .addTextDisplayComponents(
+        text(`# ${EMOJI_TEXT.cross || '<:cross:1430525603701850165>'} Marketplace Access Required`),
+        text(
+          [
+            'You do not have the authorization required to sell custom templates in the MagicUI creator marketplace.',
+            '',
+            'This option is reserved for active creators, members who consistently showcase original work, and known contributors trusted by the community.'
+          ].join('\n')
+        )
+      )
+  ];
+}
+
+function purchaseStatusLabel(purchase) {
+  if (purchase.closedAt) return 'Closed';
+  if (purchase.deliveredAt) return 'Delivered';
+  if (purchase.paymentConfirmedAt) return 'Payment confirmed';
+  return 'Awaiting payment';
+}
+
+function buildTemplatePurchaseTicketComponents(post, purchase) {
+  const confirmed = Boolean(purchase.paymentConfirmedAt);
+  const delivered = Boolean(purchase.deliveredAt);
+  const closed = Boolean(purchase.closedAt);
+
+  return [
+    new ContainerBuilder()
+      .setAccentColor(CONFIG.colors.marketplace)
+      .addTextDisplayComponents(
+        text(`# ${EMOJI_TEXT.marketplace} Template Purchase Ticket`),
+        text(
+          [
+            `Buyer: <@${purchase.buyerId}>`,
+            `Seller: <@${purchase.sellerId}>`,
+            `Template: **${post.title}**`,
+            `Price: **${post.price || 'Not specified'}**`,
+            `Payment method: **${paymentLabel(post.payment, post.type)}**`,
+            `Built with: **${post.stack || 'Not specified'}**`,
+            `Status: **${purchaseStatusLabel(purchase)}**`,
+            `Opened: <t:${Math.floor(purchase.createdAt / 1000)}:R>`
+          ].join('\n')
+        )
+      )
+      .addSeparatorComponents(separator(SeparatorSpacingSize.Large))
+      .addTextDisplayComponents(
+        text(`### Payment Instructions\n${post.contact}`),
+        text(
+          [
+            '### Delivery Flow',
+            'Buyer and seller can view this channel, but messages and file uploads stay locked until the seller confirms payment.',
+            'After payment is confirmed, the channel unlocks so the seller can share files, links, licenses, and setup notes. Close the ticket when delivery is complete; a transcript will be saved.'
+          ].join('\n')
+        )
+      )
+      .addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`template_purchase_confirm_${purchase.id}`)
+            .setLabel(confirmed ? 'Payment Confirmed' : 'Confirm Payment')
+            .setStyle(confirmed ? ButtonStyle.Secondary : ButtonStyle.Success)
+            .setEmoji(EMOJIS.payment)
+            .setDisabled(confirmed || closed),
+          new ButtonBuilder()
+            .setCustomId(`template_purchase_delivered_${purchase.id}`)
+            .setLabel(delivered ? 'Delivered' : 'Mark Delivered')
+            .setStyle(delivered ? ButtonStyle.Secondary : ButtonStyle.Primary)
+            .setEmoji(EMOJIS.verified)
+            .setDisabled(!confirmed || delivered || closed),
+          new ButtonBuilder()
+            .setCustomId(`template_purchase_transcript_${purchase.id}`)
+            .setLabel('Transcript')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji(EMOJIS.review)
+            .setDisabled(closed),
+          new ButtonBuilder()
+            .setCustomId(`template_purchase_close_${purchase.id}`)
+            .setLabel('Close')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji(EMOJIS.report)
+            .setDisabled(closed)
+        )
+      )
+  ];
+}
+
+function buildTemplateTicketNoticeComponents(title, body, color = CONFIG.colors.marketplace) {
+  return [
+    new ContainerBuilder()
+      .setAccentColor(color)
+      .addTextDisplayComponents(text(`# ${title}`), text(body))
+  ];
+}
+
+function buildTemplateCloseConfirmComponents(purchase) {
+  return [
+    new ContainerBuilder()
+      .setAccentColor(0xfaa61a)
+      .addTextDisplayComponents(
+        text('# Close Template Purchase Ticket'),
+        text('Closing saves a transcript to the job board admin channel and deletes this private purchase ticket shortly after confirmation.')
+      )
+      .addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`template_purchase_close_confirm_${purchase.id}`)
+            .setLabel('Confirm Close')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId(`template_purchase_close_cancel_${purchase.id}`)
+            .setLabel('Cancel')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      )
+  ];
+}
+
+function buildTemplatePurchaseLogComponents(title, body, color = CONFIG.colors.marketplace, transcriptName = null) {
+  const container = new ContainerBuilder()
+    .setAccentColor(color)
+    .addTextDisplayComponents(text(`# ${title}`), text(body));
+
+  if (transcriptName) {
+    container
+      .addSeparatorComponents(separator())
+      .addFileComponents(new FileBuilder().setURL(`attachment://${transcriptName}`));
+  }
+
+  return [container];
+}
+
 function buildJobSetupComponents(draft) {
   const meta = getTypeMeta(draft.type);
+  const isTemplate = draft.type === 'template';
+  const categoryOptions = categoryOptionsFor(draft.type);
+  const paymentOptions = paymentOptionsFor(draft.type);
   const categorySelect = new StringSelectMenuBuilder()
     .setCustomId(`job_setup_category_${draft.id}`)
-    .setPlaceholder(draft.category ? `Category: ${categoryLabel(draft.category)}` : 'Choose the closest category')
+    .setPlaceholder(draft.category ? `Category: ${categoryLabel(draft.category, draft.type)}` : (isTemplate ? 'Choose template type' : 'Choose the closest category'))
     .addOptions(
-      ...CATEGORY_OPTIONS.map(option =>
+      ...categoryOptions.map(option =>
         new StringSelectMenuOptionBuilder()
           .setLabel(option.label)
           .setDescription(option.description)
@@ -651,9 +917,9 @@ function buildJobSetupComponents(draft) {
 
   const paymentSelect = new StringSelectMenuBuilder()
     .setCustomId(`job_setup_payment_${draft.id}`)
-    .setPlaceholder(draft.payment ? `Payment: ${paymentLabel(draft.payment)}` : 'Choose payment or compensation type')
+    .setPlaceholder(draft.payment ? `Payment: ${paymentLabel(draft.payment, draft.type)}` : (isTemplate ? 'Choose accepted payment method' : 'Choose payment or compensation type'))
     .addOptions(
-      ...PAYMENT_OPTIONS.map(option =>
+      ...paymentOptions.map(option =>
         new StringSelectMenuOptionBuilder()
           .setLabel(option.label)
           .setDescription(option.description)
@@ -664,14 +930,16 @@ function buildJobSetupComponents(draft) {
 
   return [
     new ContainerBuilder()
-      .setAccentColor(CONFIG.colors.panel)
+      .setAccentColor(isTemplate ? CONFIG.colors.marketplace : CONFIG.colors.panel)
       .addTextDisplayComponents(
         text(`# Create ${meta.label} Post`),
         text(
           [
-            'Start with category and payment. After that, the bot will open the post details form.',
-            `Selected category: **${categoryLabel(draft.category)}**`,
-            `Selected payment: **${paymentLabel(draft.payment)}**`
+            isTemplate
+              ? 'Start with template type and accepted payment method. After that, the bot will collect price, tech stack, and private payment instructions.'
+              : 'Start with category and payment. After that, the bot will open the post details form.',
+            `Selected category: **${categoryLabel(draft.category, draft.type)}**`,
+            `Selected payment: **${paymentLabel(draft.payment, draft.type)}**`
           ].join('\n')
         )
       )
@@ -697,22 +965,59 @@ function buildJobSetupComponents(draft) {
 function buildJobPostModal(draftId, type) {
   const meta = getTypeMeta(type);
   const modal = new ModalBuilder().setCustomId(`job_post_modal_${draftId}`).setTitle(`Create ${meta.label} Post`);
+  const isTemplate = type === 'template';
 
   const title = new TextInputBuilder()
     .setCustomId('title')
-    .setLabel('Post title')
-    .setPlaceholder(type === 'for_hire' ? 'UI designer available for commissions' : 'Hiring frontend developer')
+    .setLabel(isTemplate ? 'Template title' : 'Post title')
+    .setPlaceholder(isTemplate ? 'SaaS dashboard template for Next.js' : type === 'for_hire' ? 'UI designer available for commissions' : 'Hiring frontend developer')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(90);
 
   const body = new TextInputBuilder()
     .setCustomId('body')
-    .setLabel('Main text')
-    .setPlaceholder('Describe scope, skills, budget/rate, requirements, timeline, proof links, and expectations.')
+    .setLabel(isTemplate ? 'Template details' : 'Main text')
+    .setPlaceholder(isTemplate ? 'Describe pages, features, included files, license, support, and what makes it custom.' : 'Describe scope, skills, budget/rate, requirements, timeline, proof links, and expectations.')
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
     .setMaxLength(1800);
+
+  if (isTemplate) {
+    const price = new TextInputBuilder()
+      .setCustomId('price')
+      .setLabel('Price')
+      .setPlaceholder('$49, $99, negotiable, or bundle price')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(80);
+
+    const stack = new TextInputBuilder()
+      .setCustomId('stack')
+      .setLabel('Stack and component libraries')
+      .setPlaceholder('Next.js, React, Tailwind CSS, shadcn/ui, Magic UI, Framer Motion...')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(500);
+
+    const contact = new TextInputBuilder()
+      .setCustomId('contact')
+      .setLabel('Payment/contact instructions')
+      .setPlaceholder('PayPal link, Stripe link, Discord contact, delivery note, or invoice instructions.')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(700);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(title),
+      new ActionRowBuilder().addComponents(body),
+      new ActionRowBuilder().addComponents(price),
+      new ActionRowBuilder().addComponents(stack),
+      new ActionRowBuilder().addComponents(contact)
+    );
+
+    return modal;
+  }
 
   const contact = new TextInputBuilder()
     .setCustomId('contact')
@@ -769,6 +1074,7 @@ function buildJobMediaModal(draftId) {
 
 function buildDraftPreviewComponents(draft) {
   const meta = getTypeMeta(draft.type);
+  const isTemplate = draft.type === 'template';
   const accentText = Number.isInteger(draft.accentColor)
     ? `#${draft.accentColor.toString(16).padStart(6, '0').toUpperCase()}`
     : draft.requestedAccentColor && !draft.customColorAllowed
@@ -777,18 +1083,19 @@ function buildDraftPreviewComponents(draft) {
 
   return [
     new ContainerBuilder()
-      .setAccentColor(CONFIG.colors.panel)
+      .setAccentColor(isTemplate ? CONFIG.colors.marketplace : CONFIG.colors.panel)
       .addTextDisplayComponents(
-        text(`# Review Job Post Draft`),
+        text(`# Review ${isTemplate ? 'Template Listing' : 'Job Post'} Draft`),
         text(
           [
             `${meta.emojiText} Type: **${meta.label}**`,
             `Title: **${draft.title}**`,
-            `Category: **${categoryLabel(draft.category)}**`,
-            `Payment: **${paymentLabel(draft.payment)}**`,
-            `Contact: ${draft.contact}`,
+            `Category: **${categoryLabel(draft.category, draft.type)}**`,
+            isTemplate ? `Price: **${draft.price || 'Not specified'}**` : `Payment: **${paymentLabel(draft.payment, draft.type)}**`,
+            isTemplate ? `Accepted payment: **${paymentLabel(draft.payment, draft.type)}**` : null,
+            isTemplate ? `Built with: **${draft.stack || 'Not specified'}**` : `Contact: ${draft.contact}`,
             `Accent color: **${accentText}**`
-          ].join('\n')
+          ].filter(Boolean).join('\n')
         )
       )
       .addSeparatorComponents(separator())
@@ -797,7 +1104,9 @@ function buildDraftPreviewComponents(draft) {
       )
       .addSeparatorComponents(separator())
       .addTextDisplayComponents(
-        text('Publish now, or add optional media/color first. Images and custom colors are optional.')
+        text(isTemplate
+          ? 'Publish now, or add optional preview images/color first. Payment instructions stay inside private purchase tickets.'
+          : 'Publish now, or add optional media/color first. Images and custom colors are optional.')
       )
       .addActionRowComponents(
         new ActionRowBuilder().addComponents(
@@ -955,6 +1264,7 @@ module.exports = {
   EMOJI_TEXT,
   STORE_FILE,
   addPost,
+  addPurchase,
   addReport,
   autoPublish,
   buildAdminHubComponents,
@@ -971,6 +1281,12 @@ module.exports = {
   buildReportModal,
   buildReviewModal,
   buildApplyModal,
+  buildTemplateAccessDeniedComponents,
+  buildTemplateCloseConfirmComponents,
+  buildTemplatePurchaseLogComponents,
+  buildTemplatePurchaseTicketComponents,
+  buildTemplateTicketNoticeComponents,
+  canSellTemplates,
   canUseCustomPostColor,
   categoryLabel,
   cleanText,
@@ -978,16 +1294,19 @@ module.exports = {
   createId,
   fetchTextChannel,
   getPost,
+  getPurchase,
   getTypeMeta,
   isAdminMember,
   loadStore,
   normalizeHexColor,
   normalizeImageUrl,
   paymentLabel,
+  purchaseStatusLabel,
   publicPostUrl,
   saveStore,
   sendAdminHub,
   sendPublicPanel,
   updatePost,
+  updatePurchase,
   updateReport
 };

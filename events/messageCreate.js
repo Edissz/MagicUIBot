@@ -6,8 +6,8 @@ const {
   buildUnverifiedPromptComponents
 } = require('../utils/supportV2');
 
-const VERIFICATION_PROMPT_COOLDOWN_MS = 60 * 1000;
-const VERIFICATION_PROMPT_DELETE_MS = 2 * 60 * 1000;
+const VERIFICATION_PROMPT_COOLDOWN_MS = 10 * 1000;
+const VERIFICATION_PROMPT_DELETE_MS = 5 * 1000;
 
 async function sendVerificationPrompt(message) {
   const key = `${message.guild.id}:${message.author.id}`;

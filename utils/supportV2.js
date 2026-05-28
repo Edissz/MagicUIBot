@@ -655,7 +655,7 @@ function buildUnverifiedPromptComponents(user, guildId = GUILD_ID) {
       .addActionRowComponents(
         buttonRow([
           new ButtonBuilder()
-            .setCustomId(`verify_start_${guildId}`)
+            .setCustomId(`verify_prompt_${guildId}`)
             .setLabel('Verify Now')
             .setStyle(ButtonStyle.Primary)
             .setEmoji(EMOJIS.fingerprintScan)

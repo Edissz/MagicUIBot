@@ -180,8 +180,12 @@ module.exports = {
       });
     }
 
-    if (interaction.isButton() && interaction.customId.startsWith('verify_start_')) {
-      const guildId = interaction.customId.replace('verify_start_', '');
+    const verificationStart = interaction.isButton()
+      ? interaction.customId.match(/^verify_(start|prompt)_(\d{17,20})$/)
+      : null;
+
+    if (verificationStart) {
+      const [, source, guildId] = verificationStart;
       const challenge = createChallenge({ guildId, userId: interaction.user.id });
       const modal = new ModalBuilder()
         .setCustomId(`verify_submit_${challenge.token}`)
@@ -196,7 +200,13 @@ module.exports = {
         .setMaxLength(20);
 
       modal.addComponents(new ActionRowBuilder().addComponents(answer));
-      return interaction.showModal(modal);
+      await interaction.showModal(modal);
+
+      if (source === 'prompt') {
+        interaction.message?.delete().catch(() => null);
+      }
+
+      return;
     }
 
     if (interaction.isModalSubmit() && interaction.customId.startsWith('verify_submit_')) {

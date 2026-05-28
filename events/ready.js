@@ -1,4 +1,5 @@
 const { SUPPORT_PANEL_CHANNEL_ID } = require('../utils/supportV2');
+const { configuredVoiceChannelId, startVoicePresence } = require('../utils/voicePresence');
 
 async function syncSlashCommands(client) {
   const slashCommands = [...client.commands.values()]
@@ -30,6 +31,18 @@ module.exports = {
       console.log(`Slash commands synced. Support panel channel: ${SUPPORT_PANEL_CHANNEL_ID}`);
     } catch (err) {
       console.error('Failed to sync slash commands:', err);
+    }
+
+    if (process.env.VOICE_AUTOJOIN !== 'false') {
+      const channelId = configuredVoiceChannelId();
+
+      startVoicePresence(client, channelId)
+        .then(({ channel }) => {
+          console.log(`Voice presence connected to ${channel.name} (${channel.id}).`);
+        })
+        .catch(err => {
+          console.error(`Failed to join voice channel ${channelId}:`, err.message);
+        });
     }
   }
 };

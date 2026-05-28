@@ -36,6 +36,7 @@ const {
   loadStore,
   normalizeHexColor,
   normalizeImageUrl,
+  recoverPostFromMessage,
   sendAdminHub,
   sendPublicPanel,
   updatePost,
@@ -63,6 +64,40 @@ async function sendError(interaction, err) {
 
 function postIdFrom(customId, prefix) {
   return customId.slice(prefix.length);
+}
+
+function getPublicActionPost(interaction, postId) {
+  let post = getPost(postId);
+  if (!post) {
+    post = recoverPostFromMessage(interaction.message, postId, interaction.customId);
+  }
+
+  if (post?.removed && post.messageId && interaction.message?.id === post.messageId) {
+    post = updatePost(post.id, stored => {
+      stored.removed = false;
+      if (!stored.status) stored.status = 'open';
+      stored.restoredFromVisibleMessageAt = Date.now();
+      return stored;
+    }) || post;
+  }
+
+  if (post && !post.removed) {
+    queueRecoveredPostRefresh(interaction, post);
+  }
+
+  return post && !post.removed ? post : null;
+}
+
+function queueRecoveredPostRefresh(interaction, post) {
+  if (!post.recoveredFromMessage || post.publicMessageRefreshedAt) return;
+
+  const refreshedPost = updatePost(post.id, stored => {
+    stored.publicMessageRefreshedAt = Date.now();
+    return stored;
+  }) || post;
+
+  syncPostMessages(interaction.guild, refreshedPost)
+    .catch(err => console.error('Failed to refresh recovered public job post:', err));
 }
 
 function getDraftStore(client) {
@@ -1333,7 +1368,8 @@ module.exports = {
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_template_purchase_')) {
-        const post = getPost(postIdFrom(interaction.customId, 'job_template_purchase_'));
+        const postId = postIdFrom(interaction.customId, 'job_template_purchase_');
+        const post = getPublicActionPost(interaction, postId);
         return await createTemplatePurchaseTicket(interaction, client, post);
       }
 
@@ -1342,8 +1378,9 @@ module.exports = {
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_contact_')) {
-        const post = getPost(postIdFrom(interaction.customId, 'job_contact_'));
-        if (!post || post.removed) {
+        const postId = postIdFrom(interaction.customId, 'job_contact_');
+        const post = getPublicActionPost(interaction, postId);
+        if (!post) {
           return interaction.reply({ content: '<:cross:1430525603701850165> That job post is no longer available.', ephemeral: true });
         }
 
@@ -1355,8 +1392,9 @@ module.exports = {
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_review_')) {
-        const post = getPost(postIdFrom(interaction.customId, 'job_review_'));
-        if (!post || post.removed) {
+        const postId = postIdFrom(interaction.customId, 'job_review_');
+        const post = getPublicActionPost(interaction, postId);
+        if (!post) {
           return interaction.reply({ content: '<:cross:1430525603701850165> That job post is no longer available.', ephemeral: true });
         }
         return await interaction.showModal(buildReviewModal(post.id));
@@ -1367,8 +1405,9 @@ module.exports = {
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_report_')) {
-        const post = getPost(postIdFrom(interaction.customId, 'job_report_'));
-        if (!post || post.removed) {
+        const postId = postIdFrom(interaction.customId, 'job_report_');
+        const post = getPublicActionPost(interaction, postId);
+        if (!post) {
           return interaction.reply({ content: '<:cross:1430525603701850165> That job post is no longer available.', ephemeral: true });
         }
         return await interaction.showModal(buildReportModal(post.id));
@@ -1379,8 +1418,9 @@ module.exports = {
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('job_apply_')) {
-        const post = getPost(postIdFrom(interaction.customId, 'job_apply_'));
-        if (!post || post.removed || post.type !== 'hiring' || post.status !== 'open') {
+        const postId = postIdFrom(interaction.customId, 'job_apply_');
+        const post = getPublicActionPost(interaction, postId);
+        if (!post || post.type !== 'hiring' || post.status !== 'open') {
           return interaction.reply({ content: '<:cross:1430525603701850165> This opportunity is not open for applications.', ephemeral: true });
         }
         return await interaction.showModal(buildApplyModal(post.id));

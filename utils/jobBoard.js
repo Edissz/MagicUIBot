@@ -298,7 +298,10 @@ function separator(spacing = SeparatorSpacingSize.Small) {
 }
 
 function optionLabel(options, value, fallback = 'Not specified') {
-  return options.find(option => option.value === value)?.label || fallback;
+  const option = options.find(item => item.value === value);
+  if (option) return option.label;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return fallback;
 }
 
 function categoryOptionsFor(type) {
@@ -315,6 +318,128 @@ function categoryLabel(value, type = null) {
 
 function paymentLabel(value, type = null) {
   return optionLabel(paymentOptionsFor(type), value, 'Not specified');
+}
+
+function optionValueFromLabel(options, label) {
+  const normalized = String(label || '').trim().toLowerCase();
+  if (!normalized) return null;
+
+  const option = options.find(item =>
+    item.label.toLowerCase() === normalized ||
+    item.value.toLowerCase() === normalized
+  );
+
+  return option?.value || label.trim();
+}
+
+function lineValue(textValue, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(textValue || '').match(new RegExp(`${escaped}:\\s*\\*\\*([^*]+)\\*\\*`, 'i'));
+  return match?.[1]?.trim() || null;
+}
+
+function componentTextEntries(components, entries = [], seen = new Set()) {
+  if (!Array.isArray(components)) return entries;
+
+  for (const component of components) {
+    if (!component || seen.has(component)) continue;
+    seen.add(component);
+
+    let raw = component;
+    if (typeof component.toJSON === 'function') {
+      try {
+        raw = component.toJSON();
+      } catch {
+        raw = component;
+      }
+    }
+
+    const content = raw?.content || raw?.data?.content;
+    if (typeof content === 'string' && content.trim()) {
+      entries.push(content.trim());
+    }
+
+    for (const key of ['components', 'items']) {
+      if (Array.isArray(raw?.[key])) {
+        componentTextEntries(raw[key], entries, seen);
+      }
+    }
+  }
+
+  return entries;
+}
+
+function inferPostType({ textValue, channelId, customId }) {
+  if (customId?.startsWith('job_template_purchase_')) return 'template';
+  if (customId?.startsWith('job_apply_')) return 'hiring';
+  if (channelId === CONFIG.marketplaceChannelId || /Creator Marketplace Template/i.test(textValue)) return 'template';
+  if (channelId === CONFIG.hiringChannelId || /Hiring Opportunity/i.test(textValue)) return 'hiring';
+  return 'for_hire';
+}
+
+function legacyPostFromMessage(message, postId, customId = '') {
+  if (!message || !postId) return null;
+
+  const entries = componentTextEntries(message.components || []);
+  const textValue = entries.join('\n');
+  if (!textValue) return null;
+
+  const type = inferPostType({ textValue, channelId: message.channelId, customId });
+  const titleEntry = entries.find(entry => /^#\s+/.test(entry) && !/Job Board|Admin Review|Report/i.test(entry));
+  const title = cleanTitle(titleEntry ? titleEntry.replace(/^#\s+/, '') : 'Recovered Job Board Post');
+  const detailsIndex = entries.findIndex(entry => /^###\s+Details\b/i.test(entry));
+  const body = cleanText(detailsIndex >= 0 ? entries[detailsIndex + 1] : '', 1800, 'Recovered from an existing public post.');
+  const contact = textValue.match(/\*\*Contact:\*\*\s*(.+)$/im)?.[1]?.trim() ||
+    (type === 'template' ? 'Ask the seller for payment instructions in this purchase ticket.' : 'Contact details were not recoverable from the existing post.');
+  const authorId = textValue.match(/\bby\s+<@!?(\d{17,20})>/i)?.[1] ||
+    textValue.match(/(?:Poster|Seller|Post author):\s*<@!?(\d{17,20})>/i)?.[1] ||
+    null;
+  const postedAt = Number(textValue.match(/Posted:\s*<t:(\d+):/i)?.[1] || 0) * 1000;
+  const category = optionValueFromLabel(categoryOptionsFor(type), lineValue(textValue, 'Category'));
+  const payment = optionValueFromLabel(paymentOptionsFor(type), lineValue(textValue, type === 'template' ? 'Accepted payment' : 'Payment'));
+  const statusText = lineValue(textValue, 'Status')?.toLowerCase();
+  const status = ['filled', 'closed'].includes(statusText) ? statusText : 'open';
+
+  return {
+    id: postId,
+    type,
+    category,
+    payment,
+    price: type === 'template' ? lineValue(textValue, 'Price') : null,
+    stack: type === 'template' ? lineValue(textValue, 'Built with') : null,
+    title,
+    body,
+    largeImageUrl: null,
+    imageUrl: null,
+    accentColor: null,
+    requestedAccentColor: null,
+    customColorAllowed: false,
+    contact,
+    authorId,
+    authorTag: 'Recovered from public post',
+    createdAt: postedAt || message.createdTimestamp || Date.now(),
+    targetChannelId: message.channelId || getTypeMeta(type).channelId,
+    messageId: message.id || null,
+    status,
+    verified: /Verified by staff/i.test(textValue),
+    removed: false,
+    reviews: [],
+    reports: [],
+    applications: [],
+    purchases: [],
+    recoveredFromMessage: true,
+    recoveredAt: Date.now()
+  };
+}
+
+function recoverPostFromMessage(message, postId, customId = '') {
+  const existing = getPost(postId);
+  if (existing) return existing;
+
+  const post = legacyPostFromMessage(message, postId, customId);
+  if (!post || !post.authorId) return null;
+
+  return addPost(post);
 }
 
 function getTypeMeta(type) {
@@ -509,7 +634,6 @@ function buildPostComponents(post) {
           isTemplate ? `Price: **${post.price || 'Not specified'}**` : `Payment: **${paymentLabel(post.payment, post.type)}**`,
           isTemplate ? `Accepted payment: **${paymentLabel(post.payment, post.type)}**` : null,
           isTemplate ? `Built with: **${post.stack || 'React / custom frontend'}**` : null,
-          `Status: **${statusLabel(post)}**`,
           `Posted: <t:${Math.floor(post.createdAt / 1000)}:R>`
         ].filter(Boolean).join('\n')
       )
@@ -1303,6 +1427,7 @@ module.exports = {
   paymentLabel,
   purchaseStatusLabel,
   publicPostUrl,
+  recoverPostFromMessage,
   saveStore,
   sendAdminHub,
   sendPublicPanel,

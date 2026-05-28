@@ -6,6 +6,7 @@ const {
   ButtonStyle,
   ChannelType,
   ContainerBuilder,
+  EmbedBuilder,
   FileBuilder,
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
@@ -488,6 +489,18 @@ function statusLabel(post) {
   return 'Open';
 }
 
+function ownerStatusLabel(post) {
+  if (post.removed) return 'Hidden';
+  if (post.type === 'template' && post.status === 'filled') return 'Sold out';
+  return statusLabel(post);
+}
+
+function templateStockLabel(post) {
+  if (post.status === 'filled') return 'Sold out';
+  if (Number.isInteger(post.stockAvailable)) return `${post.stockAvailable} available`;
+  return 'Unlimited';
+}
+
 function publicPostUrl(post) {
   if (!post.messageId || !post.targetChannelId) return 'Not published yet';
   return `https://discord.com/channels/${CONFIG.guildId}/${post.targetChannelId}/${post.messageId}`;
@@ -634,6 +647,7 @@ function buildPostComponents(post) {
           isTemplate ? `Price: **${post.price || 'Not specified'}**` : `Payment: **${paymentLabel(post.payment, post.type)}**`,
           isTemplate ? `Accepted payment: **${paymentLabel(post.payment, post.type)}**` : null,
           isTemplate ? `Built with: **${post.stack || 'React / custom frontend'}**` : null,
+          isTemplate ? `Stock: **${templateStockLabel(post)}**` : null,
           `Posted: <t:${Math.floor(post.createdAt / 1000)}:R>`
         ].filter(Boolean).join('\n')
       )
@@ -754,6 +768,7 @@ function buildAdminPostComponents(post) {
             isTemplate ? `Price: **${post.price || 'Not specified'}**` : `Payment: **${paymentLabel(post.payment, post.type)}**`,
             isTemplate ? `Accepted payment: **${paymentLabel(post.payment, post.type)}**` : null,
             isTemplate ? `Built with: **${post.stack || 'Not specified'}**` : null,
+            isTemplate ? `Stock: **${templateStockLabel(post)}**` : null,
             `Custom color: **${Number.isInteger(post.accentColor) ? `#${post.accentColor.toString(16).padStart(6, '0').toUpperCase()}` : 'None'}**`,
             `Status: **${statusLabel(post)}**`,
             `Verified: **${post.verified ? 'Yes' : 'No'}**`,
@@ -1353,6 +1368,218 @@ function buildApplyModal(postId) {
   return modal;
 }
 
+function scopeMatchesPost(scope, post) {
+  return scope === 'templates' ? post.type === 'template' : post.type !== 'template';
+}
+
+function listOwnerPosts(userId, scope = 'jobs') {
+  const store = loadStore();
+  return Object.values(store.posts || {})
+    .filter(post => post.authorId === userId && scopeMatchesPost(scope, post))
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+}
+
+function shortLabel(value, maxLength = 90) {
+  const clean = String(value || 'Untitled post').replace(/\s+/g, ' ').trim();
+  return clean.length > maxLength ? `${clean.slice(0, maxLength - 3)}...` : clean;
+}
+
+function buildOwnerManagePayload({ user, scope, posts }) {
+  const title = scope === 'templates' ? 'Manage Creator Templates' : 'Manage Job Board Posts';
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(scope === 'templates' ? CONFIG.colors.marketplace : CONFIG.colors.panel)
+    .setDescription(
+      posts.length
+        ? 'Choose one of your posts below to edit details, reopen it, close it, or mark it sold out/filled.'
+        : 'No posts were found for your account yet. If an older public post is missing, click one of its buttons once or run this command again after the bot scans recent posts.'
+    )
+    .setFooter({ text: 'These controls only work for the post owner and Magic UI staff.' })
+    .setTimestamp(new Date());
+
+  if (posts.length) {
+    embed.addFields(
+      posts.slice(0, 10).map(post => ({
+        name: shortLabel(post.title, 80),
+        value: [
+          `Type: ${getTypeMeta(post.type).label}`,
+          `Status: ${ownerStatusLabel(post)}`,
+          post.type === 'template' ? `Price: ${post.price || 'Not specified'}` : `Payment: ${paymentLabel(post.payment, post.type)}`,
+          post.type === 'template' ? `Stock: ${templateStockLabel(post)}` : null
+        ].filter(Boolean).join('\n'),
+        inline: true
+      }))
+    );
+  }
+
+  const rows = [];
+  if (posts.length) {
+    const options = posts.slice(0, 25).map(post =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(shortLabel(post.title, 90))
+        .setDescription(shortLabel(`${ownerStatusLabel(post)} - ${getTypeMeta(post.type).label}`, 100))
+        .setValue(post.id)
+    );
+
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`job_owner_select_${scope}_${user.id}`)
+          .setPlaceholder('Choose a post to manage')
+          .addOptions(options)
+      )
+    );
+  }
+
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`job_owner_refresh_${scope}_${user.id}`)
+        .setLabel('Refresh List')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji(EMOJIS.review)
+    )
+  );
+
+  return { embeds: [embed], components: rows };
+}
+
+function buildOwnerPostPayload(post, scope) {
+  const isTemplate = post.type === 'template';
+  const meta = getTypeMeta(post.type);
+  const fields = [
+    { name: 'Type', value: meta.label, inline: true },
+    { name: 'Status', value: ownerStatusLabel(post), inline: true },
+    {
+      name: isTemplate ? 'Price' : 'Payment',
+      value: isTemplate ? (post.price || 'Not specified') : paymentLabel(post.payment, post.type),
+      inline: true
+    },
+    isTemplate
+      ? { name: 'Stock', value: templateStockLabel(post), inline: true }
+      : { name: 'Contact', value: shortLabel(post.contact, 250), inline: false },
+    isTemplate
+      ? { name: 'Payment / Contact', value: shortLabel(post.contact, 250), inline: false }
+      : null
+  ].filter(Boolean);
+
+  const embed = new EmbedBuilder()
+    .setTitle(shortLabel(post.title, 256))
+    .setColor(Number.isInteger(post.accentColor) ? post.accentColor : meta.color)
+    .setDescription(shortLabel(post.body, 1000))
+    .addFields(fields)
+    .setFooter({ text: `Post ID: ${post.id}` })
+    .setTimestamp(new Date(post.createdAt || Date.now()));
+
+  const statusRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`job_owner_status_open_${post.id}`)
+      .setLabel('Open')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!post.removed && post.status === 'open'),
+    new ButtonBuilder()
+      .setCustomId(`job_owner_status_filled_${post.id}`)
+      .setLabel(isTemplate ? 'Sold Out' : 'Filled')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(!post.removed && post.status === 'filled'),
+    new ButtonBuilder()
+      .setCustomId(`job_owner_status_closed_${post.id}`)
+      .setLabel('Closed')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!post.removed && post.status === 'closed')
+  );
+
+  const editRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`job_owner_edit_${post.id}`)
+      .setLabel(isTemplate ? 'Edit Price / Stock' : 'Edit Details')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji(isTemplate ? EMOJIS.payment : EMOJIS.contact),
+    new ButtonBuilder()
+      .setCustomId(`job_owner_back_${scope}_${post.authorId}`)
+      .setLabel('Back To List')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [statusRow, editRow] };
+}
+
+function buildOwnerEditModal(post) {
+  const isTemplate = post.type === 'template';
+  const modal = new ModalBuilder()
+    .setCustomId(`job_owner_modal_${post.id}`)
+    .setTitle(isTemplate ? 'Manage Template' : 'Manage Job Post');
+
+  const title = new TextInputBuilder()
+    .setCustomId('title')
+    .setLabel('Title')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(90)
+    .setValue(String(post.title || '').slice(0, 90));
+
+  const body = new TextInputBuilder()
+    .setCustomId('body')
+    .setLabel(isTemplate ? 'Template details' : 'Post details')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(1800)
+    .setValue(String(post.body || '').slice(0, 1800));
+
+  const contact = new TextInputBuilder()
+    .setCustomId('contact')
+    .setLabel(isTemplate ? 'Payment/contact instructions' : 'Contact')
+    .setStyle(isTemplate ? TextInputStyle.Paragraph : TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(isTemplate ? 700 : 300)
+    .setValue(String(post.contact || '').slice(0, isTemplate ? 700 : 300));
+
+  if (isTemplate) {
+    const price = new TextInputBuilder()
+      .setCustomId('price')
+      .setLabel('Price')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(80)
+      .setValue(String(post.price || '').slice(0, 80));
+
+    const stock = new TextInputBuilder()
+      .setCustomId('stock')
+      .setLabel('Stock left (blank = unlimited, 0 = sold out)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setMaxLength(8)
+      .setValue(Number.isInteger(post.stockAvailable) ? String(post.stockAvailable) : '');
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(title),
+      new ActionRowBuilder().addComponents(price),
+      new ActionRowBuilder().addComponents(stock),
+      new ActionRowBuilder().addComponents(contact),
+      new ActionRowBuilder().addComponents(body)
+    );
+
+    return modal;
+  }
+
+  const payment = new TextInputBuilder()
+    .setCustomId('payment')
+    .setLabel('Payment / compensation')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(80)
+    .setValue(paymentLabel(post.payment, post.type).slice(0, 80));
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(title),
+    new ActionRowBuilder().addComponents(payment),
+    new ActionRowBuilder().addComponents(contact),
+    new ActionRowBuilder().addComponents(body)
+  );
+
+  return modal;
+}
+
 async function sendPublicPanel(guild) {
   const channel = await fetchTextChannel(guild, CONFIG.jobPanelChannelId);
   if (!channel) throw new Error('Job panel channel not found.');
@@ -1400,6 +1627,9 @@ module.exports = {
   buildJobMediaModal,
   buildJobPostModal,
   buildJobSetupComponents,
+  buildOwnerEditModal,
+  buildOwnerManagePayload,
+  buildOwnerPostPayload,
   buildPostComponents,
   buildReportComponents,
   buildReportModal,
@@ -1421,6 +1651,7 @@ module.exports = {
   getPurchase,
   getTypeMeta,
   isAdminMember,
+  listOwnerPosts,
   loadStore,
   normalizeHexColor,
   normalizeImageUrl,

@@ -14,6 +14,9 @@ const {
   buildJobMediaModal,
   buildJobPostModal,
   buildJobSetupComponents,
+  buildOwnerEditModal,
+  buildOwnerManagePayload,
+  buildOwnerPostPayload,
   buildPostComponents,
   buildReportComponents,
   buildReportModal,
@@ -33,6 +36,7 @@ const {
   getPurchase,
   getTypeMeta,
   isAdminMember,
+  listOwnerPosts,
   loadStore,
   normalizeHexColor,
   normalizeImageUrl,
@@ -98,6 +102,284 @@ function queueRecoveredPostRefresh(interaction, post) {
 
   syncPostMessages(interaction.guild, refreshedPost)
     .catch(err => console.error('Failed to refresh recovered public job post:', err));
+}
+
+function actionCustomIds(components, ids = [], seen = new Set()) {
+  if (!Array.isArray(components)) return ids;
+
+  for (const component of components) {
+    if (!component || seen.has(component)) continue;
+    seen.add(component);
+
+    let raw = component;
+    if (typeof component.toJSON === 'function') {
+      try {
+        raw = component.toJSON();
+      } catch {
+        raw = component;
+      }
+    }
+
+    const customId = raw?.custom_id || raw?.customId || raw?.data?.custom_id || raw?.data?.customId;
+    if (customId) ids.push(customId);
+
+    for (const key of ['components', 'items']) {
+      if (Array.isArray(raw?.[key])) actionCustomIds(raw[key], ids, seen);
+    }
+  }
+
+  return ids;
+}
+
+function publicPostIdFromMessage(message, scope) {
+  const ids = actionCustomIds(message.components || []);
+  const prefixes = scope === 'templates'
+    ? ['job_template_purchase_', 'job_contact_', 'job_review_', 'job_report_']
+    : ['job_apply_', 'job_contact_', 'job_review_', 'job_report_'];
+
+  for (const customId of ids) {
+    const prefix = prefixes.find(item => customId.startsWith(item));
+    if (prefix) return { postId: postIdFrom(customId, prefix), customId };
+  }
+
+  return null;
+}
+
+function canManageOwnerPost(interaction, post) {
+  return post?.authorId === interaction.user.id || isAdminMember(interaction.member);
+}
+
+function parseStock(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (!/^\d{1,8}$/.test(raw)) return undefined;
+  return Number(raw);
+}
+
+function ownerScopeForPost(post) {
+  return post.type === 'template' ? 'templates' : 'jobs';
+}
+
+async function fetchManageGuild(interaction, client) {
+  return interaction.guild || client.guilds.fetch(CONFIG.guildId).catch(() => null);
+}
+
+async function scanChannelForOwnerPosts(channel, userId, scope, maxMessages = 500) {
+  let before;
+  let scanned = 0;
+
+  while (scanned < maxMessages) {
+    const limit = Math.min(100, maxMessages - scanned);
+    const fetched = await channel.messages.fetch({ limit, before }).catch(() => null);
+    if (!fetched?.size) break;
+
+    for (const message of fetched.values()) {
+      const postRef = publicPostIdFromMessage(message, scope);
+      if (!postRef) continue;
+
+      const post = recoverPostFromMessage(message, postRef.postId, postRef.customId);
+      if (post?.authorId === userId) {
+        updatePost(post.id, stored => {
+          if (!stored.messageId) stored.messageId = message.id;
+          if (!stored.targetChannelId) stored.targetChannelId = channel.id;
+          return stored;
+        });
+      }
+    }
+
+    scanned += fetched.size;
+    before = fetched.last()?.id;
+    if (fetched.size < limit) break;
+  }
+}
+
+async function recoverOwnerPostsFromPublicChannels(guild, userId, scope) {
+  const channelIds = scope === 'templates'
+    ? [CONFIG.marketplaceChannelId]
+    : [CONFIG.forHireChannelId, CONFIG.hiringChannelId];
+
+  for (const channelId of channelIds) {
+    const channel = await fetchTextChannel(guild, channelId);
+    if (channel?.messages?.fetch) {
+      await scanChannelForOwnerPosts(channel, userId, scope);
+    }
+  }
+}
+
+async function ownerPostsForDashboard(guild, userId, scope) {
+  await recoverOwnerPostsFromPublicChannels(guild, userId, scope);
+  return listOwnerPosts(userId, scope);
+}
+
+async function sendOwnerDashboard(interaction, client, scope, mode = 'reply') {
+  const guild = await fetchManageGuild(interaction, client);
+  if (!guild) {
+    const content = '<:cross:1430525603701850165> I could not find the Magic UI server.';
+    return mode === 'update' ? interaction.update({ content, embeds: [], components: [] }) : interaction.editReply(content);
+  }
+
+  const posts = await ownerPostsForDashboard(guild, interaction.user.id, scope);
+  const payload = buildOwnerManagePayload({ user: interaction.user, scope, posts });
+
+  if (mode === 'dm') {
+    const dm = await interaction.user.send(payload).catch(() => null);
+    return interaction.editReply(
+      dm
+        ? '<:check:1430525546608988203> I sent your private management panel in DMs.'
+        : '<:cross:1430525603701850165> I could not DM you. Please enable server member DMs and run the command again.'
+    );
+  }
+
+  return interaction.update(payload);
+}
+
+async function handleManageCommand(interaction, client) {
+  if (!interaction.isChatInputCommand() || interaction.commandName !== 'manage') return false;
+
+  await interaction.deferReply({ ephemeral: true });
+  const scope = interaction.options.getSubcommand() === 'templates' ? 'templates' : 'jobs';
+  await sendOwnerDashboard(interaction, client, scope, 'dm');
+  return true;
+}
+
+async function refreshOwnerPostMessages(guild, post) {
+  await syncPostMessages(guild, post);
+}
+
+async function handleOwnerManageInteraction(interaction, client) {
+  if (!interaction.customId?.startsWith('job_owner_')) return false;
+
+  const guild = await fetchManageGuild(interaction, client);
+  if (!guild) {
+    return interaction.reply({ content: '<:cross:1430525603701850165> I could not find the Magic UI server.', ephemeral: true });
+  }
+
+  const selectMatch = interaction.customId.match(/^job_owner_select_(jobs|templates)_(\d{17,20})$/);
+  if (interaction.isStringSelectMenu() && selectMatch) {
+    const [, scope, userId] = selectMatch;
+    if (interaction.user.id !== userId) {
+      return interaction.reply({ content: '<:cross:1430525603701850165> This management panel belongs to another user.', ephemeral: true });
+    }
+
+    const post = getPost(interaction.values[0]);
+    if (!post || !canManageOwnerPost(interaction, post)) {
+      return interaction.reply({ content: '<:cross:1430525603701850165> I could not find a post you can manage.', ephemeral: true });
+    }
+
+    return interaction.update(buildOwnerPostPayload(post, scope));
+  }
+
+  const refreshMatch = interaction.customId.match(/^job_owner_refresh_(jobs|templates)_(\d{17,20})$/);
+  const backMatch = interaction.customId.match(/^job_owner_back_(jobs|templates)_(\d{17,20})$/);
+  if (interaction.isButton() && (refreshMatch || backMatch)) {
+    const [, scope, userId] = refreshMatch || backMatch;
+    if (interaction.user.id !== userId) {
+      return interaction.reply({ content: '<:cross:1430525603701850165> This management panel belongs to another user.', ephemeral: true });
+    }
+
+    return sendOwnerDashboard(interaction, client, scope, 'update');
+  }
+
+  const statusMatch = interaction.customId.match(/^job_owner_status_(open|filled|closed)_(.+)$/);
+  if (interaction.isButton() && statusMatch) {
+    const [, status, postId] = statusMatch;
+    let post = getPost(postId);
+    if (!post || !canManageOwnerPost(interaction, post)) {
+      return interaction.reply({ content: '<:cross:1430525603701850165> I could not find a post you can manage.', ephemeral: true });
+    }
+
+    post = updatePost(post.id, stored => {
+      stored.removed = false;
+      stored.status = status;
+      stored.statusBy = interaction.user.id;
+      stored.statusAt = Date.now();
+
+      if (stored.type === 'template') {
+        if (status === 'filled') stored.stockAvailable = 0;
+        if (status === 'open' && Number.isInteger(stored.stockAvailable) && stored.stockAvailable <= 0) {
+          delete stored.stockAvailable;
+        }
+      }
+
+      return stored;
+    }) || post;
+
+    await refreshOwnerPostMessages(guild, post);
+    return interaction.update(buildOwnerPostPayload(post, ownerScopeForPost(post)));
+  }
+
+  const editMatch = interaction.customId.match(/^job_owner_edit_(.+)$/);
+  if (interaction.isButton() && editMatch) {
+    const post = getPost(editMatch[1]);
+    if (!post || !canManageOwnerPost(interaction, post)) {
+      return interaction.reply({ content: '<:cross:1430525603701850165> I could not find a post you can manage.', ephemeral: true });
+    }
+
+    return interaction.showModal(buildOwnerEditModal(post));
+  }
+
+  return false;
+}
+
+async function handleOwnerEditModal(interaction, client) {
+  if (!interaction.isModalSubmit() || !interaction.customId.startsWith('job_owner_modal_')) return false;
+
+  const guild = await fetchManageGuild(interaction, client);
+  if (!guild) {
+    return interaction.reply({ content: '<:cross:1430525603701850165> I could not find the Magic UI server.', ephemeral: true });
+  }
+
+  const postId = postIdFrom(interaction.customId, 'job_owner_modal_');
+  let post = getPost(postId);
+  if (!post || !canManageOwnerPost(interaction, post)) {
+    return interaction.reply({ content: '<:cross:1430525603701850165> I could not find a post you can manage.', ephemeral: true });
+  }
+
+  const isTemplate = post.type === 'template';
+  const title = cleanTitle(interaction.fields.getTextInputValue('title'));
+  const body = cleanText(interaction.fields.getTextInputValue('body'), 1800);
+  const contact = cleanText(interaction.fields.getTextInputValue('contact'), isTemplate ? 700 : 300);
+  const stock = isTemplate ? parseStock(interaction.fields.getTextInputValue('stock')) : null;
+
+  if (stock === undefined) {
+    return interaction.reply({
+      content: '<:cross:1430525603701850165> Stock must be blank for unlimited, `0` for sold out, or a whole number.',
+      ephemeral: true
+    });
+  }
+
+  post = updatePost(post.id, stored => {
+    stored.title = title;
+    stored.body = body;
+    stored.contact = contact;
+    stored.updatedBy = interaction.user.id;
+    stored.updatedAt = Date.now();
+
+    if (isTemplate) {
+      stored.price = cleanText(interaction.fields.getTextInputValue('price'), 80);
+
+      if (stock === null) {
+        delete stored.stockAvailable;
+      } else {
+        stored.stockAvailable = stock;
+        if (stock === 0) stored.status = 'filled';
+        if (stock > 0 && stored.status === 'filled') stored.status = 'open';
+      }
+    } else {
+      stored.payment = cleanText(interaction.fields.getTextInputValue('payment'), 80);
+    }
+
+    return stored;
+  }) || post;
+
+  await refreshOwnerPostMessages(guild, post);
+
+  await interaction.reply({
+    content: '<:check:1430525546608988203> Updated your post and refreshed the public/admin cards.',
+    ephemeral: true
+  });
+
+  return interaction.user.send(buildOwnerPostPayload(post, ownerScopeForPost(post))).catch(() => null);
 }
 
 function getDraftStore(client) {
@@ -667,7 +949,15 @@ async function handleApplySubmit(interaction, client) {
 async function createTemplatePurchaseTicket(interaction, client, post) {
   await interaction.deferReply({ ephemeral: true });
 
-  if (!post || post.removed || post.type !== 'template' || post.status !== 'open') {
+  if (!post || post.removed || post.type !== 'template') {
+    return interaction.editReply('<:cross:1430525603701850165> This template listing is not open for purchases.');
+  }
+
+  if (post.status === 'filled' || (Number.isInteger(post.stockAvailable) && post.stockAvailable <= 0)) {
+    return interaction.editReply('<:cross:1430525603701850165> This template listing is sold out.');
+  }
+
+  if (post.status !== 'open') {
     return interaction.editReply('<:cross:1430525603701850165> This template listing is not open for purchases.');
   }
 
@@ -742,13 +1032,22 @@ async function createTemplatePurchaseTicket(interaction, client, post) {
     return interaction.editReply('<:cross:1430525603701850165> That template listing no longer exists.');
   }
 
+  const reservedPost = updatePost(post.id, stored => {
+    if (Number.isInteger(stored.stockAvailable)) {
+      stored.stockAvailable = Math.max(0, stored.stockAvailable - 1);
+      if (stored.stockAvailable === 0) stored.status = 'filled';
+    }
+
+    return stored;
+  }) || saved.post;
+
   await channel.send({
     content: `${interaction.user} <@${post.authorId}>`,
     allowedMentions: { users: [interaction.user.id, post.authorId] }
   });
 
   await channel.send({
-    components: buildTemplatePurchaseTicketComponents(saved.post, purchase),
+    components: buildTemplatePurchaseTicketComponents(reservedPost, purchase),
     flags: V2_FLAGS,
     allowedMentions: {
       users: [interaction.user.id, post.authorId],
@@ -756,17 +1055,17 @@ async function createTemplatePurchaseTicket(interaction, client, post) {
     }
   });
 
-  await syncAdminPostMessage(interaction.guild, saved.post);
+  await syncPostMessages(interaction.guild, reservedPost);
 
   await sendMarketplaceLog(
     interaction.guild,
     'Template Purchase Opened',
     [
-      `Template: **${post.title}** (${post.id})`,
+      `Template: **${reservedPost.title}** (${reservedPost.id})`,
       `Buyer: ${interaction.user.tag} (${interaction.user.id})`,
-      `Seller: <@${post.authorId}> (${post.authorId})`,
+      `Seller: <@${reservedPost.authorId}> (${reservedPost.authorId})`,
       `Ticket: ${channel} (${channel.id})`,
-      `Price: **${post.price || 'Not specified'}**`,
+      `Price: **${reservedPost.price || 'Not specified'}**`,
       `Opened: <t:${Math.floor(Date.now() / 1000)}:F>`
     ].join('\n')
   );
@@ -774,7 +1073,7 @@ async function createTemplatePurchaseTicket(interaction, client, post) {
   await interaction.user.send({
     components: buildTemplateTicketNoticeComponents(
       '<:check:1430525546608988203> Purchase Ticket Opened',
-      `Your private purchase ticket for **${post.title}** is ready: ${channel}`,
+      `Your private purchase ticket for **${reservedPost.title}** is ready: ${channel}`,
       CONFIG.colors.marketplace
     ),
     flags: V2_FLAGS,
@@ -785,7 +1084,7 @@ async function createTemplatePurchaseTicket(interaction, client, post) {
     user.send({
       components: buildTemplateTicketNoticeComponents(
         '<:techouse212:1421842840899551332> New Template Purchase',
-        `${interaction.user.tag} opened a purchase ticket for **${post.title}**: ${channel}`,
+        `${interaction.user.tag} opened a purchase ticket for **${reservedPost.title}**: ${channel}`,
         CONFIG.colors.marketplace
       ),
       flags: V2_FLAGS,
@@ -1240,6 +1539,10 @@ module.exports = {
   name: 'interactionCreate',
   async execute(interaction, client) {
     try {
+      if (await handleManageCommand(interaction, client)) return;
+      if (await handleOwnerManageInteraction(interaction, client)) return;
+      if (await handleOwnerEditModal(interaction, client)) return;
+
       if (!interaction.guild) return;
 
       if (interaction.isStringSelectMenu() && interaction.customId === 'job_board_select') {
